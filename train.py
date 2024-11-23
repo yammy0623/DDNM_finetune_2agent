@@ -5,8 +5,8 @@ from stable_baselines3 import A2C, DQN, PPO, SAC
 from gymnasium import spaces
 import torch as th
 import torch.nn as nn
-import wandb
-from wandb.integration.sb3 import WandbCallback
+# import wandb
+# from wandb.integration.sb3 import WandbCallback
 import warnings
 import gymnasium as gym
 from gymnasium.envs.registration import register
@@ -99,43 +99,53 @@ def eval(env, model, eval_episode_num):
 def train(eval_env, model, config):
     """Train agent using SB3 algorithm and my_config"""
     current_best = 0
-    for epoch in range(config["epoch_num"]):
+    with th.profiler.profile(
+        activities=[th.profiler.ProfilerActivity.CPU, th.profiler.ProfilerActivity.CUDA],
+        schedule=th.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+        on_trace_ready=th.profiler.tensorboard_trace_handler(
+            '/home/B10505058/RL_final/log/all_epochs/SAC'
+        ),
+        record_shapes=False,
+        profile_memory=False,
+        with_stack=True
+    ) as prof:
+        for epoch in range(config["epoch_num"]):
+            model.learn(
+                total_timesteps=config["timesteps_per_epoch"],
+                reset_num_timesteps=False,
+            )
 
-        # Uncomment to enable wandb logging
-        model.learn(
-            total_timesteps=config["timesteps_per_epoch"],
-            reset_num_timesteps=False,
-            callback=WandbCallback(
-                gradient_save_freq=100,
-                verbose=2,
-            ),
-        )
+            ### Evaluation
+            print(config["run_id"])
+            print("Epoch: ", epoch)
+            avg_reward, avg_ssim, avg_ddim_ssim, time_step_sequence = eval(eval_env, model, config["eval_episode_num"])
 
-        ### Evaluation
-        print(config["run_id"])
-        print("Epoch: ", epoch)
-        avg_reward, avg_ssim, avg_ddim_ssim, time_step_sequence = eval(eval_env, model, config["eval_episode_num"])
+            prof.step()
 
-        print("Avg_reward:  ", avg_reward)
-        print("Avg_ssim:    ", avg_ssim)
-        print("Avg_ddim_ssim:", avg_ddim_ssim)
-        print("Time_step_sequence:", time_step_sequence)
-        print()
-        wandb.log(
-            {"avg_reward": avg_reward,
-             "avg_ssim": avg_ssim,
-             "avg_ddim_ssim": avg_ddim_ssim}
-        )
-        
+            print("Avg_reward:  ", avg_reward)
+            print("Avg_ssim:    ", avg_ssim)
+            print("Avg_ddim_ssim:", avg_ddim_ssim)
+            print("Time_step_sequence:", time_step_sequence)
+            print()
+            # wandb.log(
+            #     {"avg_reward": avg_reward,
+            #      "avg_ssim": avg_ssim,
+            #      "avg_ddim_ssim": avg_ddim_ssim}
+            # )
+            
 
-        ### Save best model
-        if current_best < avg_ssim:
-            print("Saving Model")
-            current_best = avg_ssim
-            save_path = config["save_path"]
-            model.save(f"{save_path}/{epoch}")
+            ### Save best model
+            if current_best < avg_ssim:
+                print("Saving Model")
+                current_best = avg_ssim
+                save_path = config["save_path"]
+                model.save(f"{save_path}/{epoch}")
 
-        print("---------------")
+            print("---------------")
+            
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=20))
+
 
 
 def main():
@@ -143,14 +153,15 @@ def main():
         features_extractor_class=CustomCNN,
         features_extractor_kwargs=dict(features_dim=32),
     )
+    # TODO: restore config
     my_config = {
-        "run_id": "SAC_v1",
+        "run_id": "SAC_test_v1",
 
         "algorithm": MD_SAC,
         "policy_network": "MultiInputPolicy",
         "save_path": "model/sample_model",
 
-        "epoch_num": 500,
+        "epoch_num": 4, # default is 500
         "timesteps_per_epoch": 100,
         "eval_episode_num": 10,
         "learning_rate": 1e-4,
@@ -160,14 +171,14 @@ def main():
         "target_steps": 10,
         "max_steps": 100,
 
-        "num_train_envs": 16,
+        "num_train_envs": 8, # default is 16
     }
-    run = wandb.init(
-        project="final",
-        config=my_config,
-        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-        id=my_config["run_id"],
-    )
+    # run = wandb.init(
+    #     project="final",
+    #     config=my_config,
+    #     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+    #     id=my_config["run_id"],
+    # )
     
     # Create training environment 
     num_train_envs = my_config['num_train_envs']

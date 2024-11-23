@@ -105,10 +105,12 @@ class DiffusionEnv(gym.Env):
         truncate = True if self.current_step_num >= self.max_steps else False
         # Denoise current image at time t
         with torch.no_grad():
-            ### RL step
+            # RL step
             interval = self.ddim_scheduler.timesteps[0] - self.ddim_scheduler.timesteps[1]
             ddim_t = self.ddim_scheduler.timesteps[self.current_step_num]
-            t = int(torch.round(self.ddim_scheduler.timesteps[self.current_step_num] - interval * action))
+            t = int(torch.round(
+                self.ddim_scheduler.timesteps[self.current_step_num] - interval * action
+            ))
             # Truncate the time step
             t = torch.tensor(max(0, min(t, 999)))
             self.time_step_sequence.append(t.item())
@@ -118,22 +120,42 @@ class DiffusionEnv(gym.Env):
                 input = self.current_image.to("cuda")
             else:
                 # Produce input based on the previous prediction
-                input = self.scheduler.add_noise(self.prev_pred_original_image, self.prev_pred_epsilon, t).to("cuda")
-            # calculate the noise of x_t
+                input = self.scheduler.add_noise(
+                    self.prev_pred_original_image,
+                    self.prev_pred_epsilon,
+                    t
+                ).to("cuda")
+            # Calculate the noise of x_t
             noisy_residual = self.model(input, t).sample
-            # Get the x_t-1 image and save the prediction to use in the next step
-            self.prev_pred_original_image = self.scheduler.step(noisy_residual, t, input, generator=self.generator).pred_original_sample
-            self.prev_pred_epsilon = self.scheduler.step(noisy_residual, t, input, generator=self.generator).pred_epsilon
-            prev_noisy_sample = self.ddim_scheduler.step(noisy_residual, t, input, generator=self.generator).prev_sample
+            # Get the x_t-1 image and save the prediction for the next step
+            scheduler_step = self.scheduler.step(
+                noisy_residual,
+                t,
+                input,
+                generator=self.generator
+            )
+            self.prev_pred_original_image = scheduler_step.pred_original_sample
+            self.prev_pred_epsilon = scheduler_step.pred_epsilon
+            prev_noisy_sample = self.ddim_scheduler.step(
+                noisy_residual,
+                t,
+                input,
+                generator=self.generator
+            ).prev_sample
             self.current_image = prev_noisy_sample.cpu()
 
-            ### DDIM step
+            # DDIM step
             ddim_t = self.ddim_scheduler.timesteps[self.current_step_num]
             input = self.ddim_current_image.to("cuda")
-            # calculate the noise of x_t
+            # Calculate the noise of x_t
             noisy_residual = self.model(input, ddim_t).sample
             # Get the x_t-1 image
-            prev_noisy_sample = self.ddim_scheduler.step(noisy_residual, ddim_t, input, generator=self.generator).prev_sample
+            prev_noisy_sample = self.ddim_scheduler.step(
+                noisy_residual,
+                ddim_t,
+                input,
+                generator=self.generator
+            ).prev_sample
             self.ddim_current_image = prev_noisy_sample.cpu()
 
         # Finish the episode if denoising is done
