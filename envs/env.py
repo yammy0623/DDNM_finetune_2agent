@@ -10,6 +10,9 @@ from gymnasium.spaces import Box, Dict
 import os
 import random
 
+# TODO: remove recorder
+# from perfRecord import PerformanceRecord, recorder
+
 class DiffusionEnv(gym.Env):
     def __init__(self, model_name, target_steps=10, max_steps=100):
         super(DiffusionEnv, self).__init__()
@@ -29,7 +32,7 @@ class DiffusionEnv(gym.Env):
             print("Loading pretrained model from {}".format(model_name))
             self.model = UNet2DModel.from_pretrained(model_name).to("cuda")
             scheduler_subfolder = None
-        
+        # DataParellel
         self.model.to("cuda")
         self.sample_size = self.model.config.sample_size
         # RL steps
@@ -75,6 +78,8 @@ class DiffusionEnv(gym.Env):
         # return [seed]
     
     def reset(self, seed=None, options=None):
+        # TODO: remove recorder
+        # recorder.resetTick()
         if seed is not None:
             self.seed(seed)
         self.current_step_num = 0
@@ -99,11 +104,25 @@ class DiffusionEnv(gym.Env):
         # images = Image.fromarray((images * 255).round().astype("uint8"))
         # filename = os.path.join('img', f"GT_{self.current_step_num}.png")
         # images.save(filename)
+        # TODO: remove recorder
+        # recorder.resetTock()
         return observation, {}
     
     def step(self, action):
+        # TODO: remove recorder
+        # recorder.stepTick()
         truncate = True if self.current_step_num >= self.max_steps else False
         # Denoise current image at time t
+        # with torch.profiler.profile(
+        #     activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        #     schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+        #     on_trace_ready=torch.profiler.tensorboard_trace_handler(
+        #         '/home/B10505058/RL_final/log/steps/SAC'
+        #     ),
+        #     record_shapes=True,
+        #     profile_memory=True,
+        #     with_stack=True
+        # ) as prof:
         with torch.no_grad():
             # RL step
             interval = self.ddim_scheduler.timesteps[0] - self.ddim_scheduler.timesteps[1]
@@ -145,6 +164,8 @@ class DiffusionEnv(gym.Env):
             self.current_image = prev_noisy_sample.cpu()
 
             # DDIM step
+            # TODO: remove recorder
+            # recorder.ddimTick()
             ddim_t = self.ddim_scheduler.timesteps[self.current_step_num]
             input = self.ddim_current_image.to("cuda")
             # Calculate the noise of x_t
@@ -157,12 +178,15 @@ class DiffusionEnv(gym.Env):
                 generator=self.generator
             ).prev_sample
             self.ddim_current_image = prev_noisy_sample.cpu()
+            # TODO: remove recorder
+            # recorder.ddimTock()
 
         # Finish the episode if denoising is done
         done = self.current_step_num == self.target_steps - 1
         # Increase number of steps
         self.current_step_num += 1
         # Calculate reward
+
         reward, ssim, ddim_ssim = self.calculate_reward(done)
         info = {
             'ddim_t': ddim_t,
@@ -178,6 +202,8 @@ class DiffusionEnv(gym.Env):
             "image": self.current_image,  
             "value": t
         }
+        #     prof.step()
+        # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
         # Save the image if done
         # if done:
         #     if not os.path.exists('img'):
@@ -197,10 +223,14 @@ class DiffusionEnv(gym.Env):
         #     images = Image.fromarray((images * 255).round().astype("uint8"))
         #     filename = os.path.join('img', f"GT_{self.current_step_num}.png")
         #     images.save(filename)
-       
+        # TODO: remove recorder
+        # recorder.epochTick()
+        # recorder.stepTock()
         return observation, reward, done, truncate, info
 
     def calculate_reward(self, done):
+        # TODO: remove recorder
+        # recorder.rewardTick()
         reward = 0
         # similarity = torch.nn.functional.mse_loss(self.current_image, self.GT_image)
         # ddim_similarity = torch.nn.functional.mse_loss(self.ddim_current_image, self.GT_image)
@@ -213,6 +243,8 @@ class DiffusionEnv(gym.Env):
         if done and ssim > self.final_threshold:
             reward += 1
 
+        # TODO: remove recorder
+        # recorder.rewardTock()
         return reward, ssim, ddim_ssim
     
     def render(self, mode='human', close=False):
