@@ -5,13 +5,16 @@ from stable_baselines3 import A2C, DQN, PPO, SAC
 from gymnasium import spaces
 import torch as th
 import torch.nn as nn
-# import wandb
-# from wandb.integration.sb3 import WandbCallback
+import wandb
+from wandb.integration.sb3 import WandbCallback
 import warnings
 import gymnasium as gym
 from gymnasium.envs.registration import register
 import torch.nn.functional as F
 from func import MD_SAC
+
+# TODO: remove recorder
+# from perfRecord import PerformanceRecord, recorder 
 
 warnings.filterwarnings("ignore")
 register(
@@ -99,52 +102,55 @@ def eval(env, model, eval_episode_num):
 def train(eval_env, model, config):
     """Train agent using SB3 algorithm and my_config"""
     current_best = 0
-    with th.profiler.profile(
-        activities=[th.profiler.ProfilerActivity.CPU, th.profiler.ProfilerActivity.CUDA],
-        schedule=th.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
-        on_trace_ready=th.profiler.tensorboard_trace_handler(
-            '/home/B10505058/RL_final/log/all_epochs/SAC'
-        ),
-        record_shapes=False,
-        profile_memory=False,
-        with_stack=True
-    ) as prof:
-        for epoch in range(config["epoch_num"]):
-            model.learn(
-                total_timesteps=config["timesteps_per_epoch"],
-                reset_num_timesteps=False,
-            )
+    # with th.profiler.profile(
+    #     activities=[th.profiler.ProfilerActivity.CPU, th.profiler.ProfilerActivity.CUDA],
+    #     # schedule=th.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+    #     on_trace_ready=th.profiler.tensorboard_trace_handler(
+    #         '/home/B10505058/RL_final/log/SAC_2epoch'
+    #     ),
+    #     record_shapes=False,
+    #     profile_memory=False,
+    #     with_stack=True
+    # ) as prof:
+    for epoch in range(config["epoch_num"]):
 
-            ### Evaluation
-            print(config["run_id"])
-            print("Epoch: ", epoch)
-            avg_reward, avg_ssim, avg_ddim_ssim, time_step_sequence = eval(eval_env, model, config["eval_episode_num"])
+        model.learn(
+            total_timesteps=config["timesteps_per_epoch"],
+            reset_num_timesteps=False,
+        )
 
-            prof.step()
+        ### Evaluation
+        print(config["run_id"])
+        print("Epoch: ", epoch)
+        avg_reward, avg_ssim, avg_ddim_ssim, time_step_sequence = eval(eval_env, model, config["eval_episode_num"])
 
-            print("Avg_reward:  ", avg_reward)
-            print("Avg_ssim:    ", avg_ssim)
-            print("Avg_ddim_ssim:", avg_ddim_ssim)
-            print("Time_step_sequence:", time_step_sequence)
-            print()
-            # wandb.log(
-            #     {"avg_reward": avg_reward,
-            #      "avg_ssim": avg_ssim,
-            #      "avg_ddim_ssim": avg_ddim_ssim}
-            # )
+        # prof.step()
+
+        print("Avg_reward:  ", avg_reward)
+        print("Avg_ssim:    ", avg_ssim)
+        print("Avg_ddim_ssim:", avg_ddim_ssim)
+        print("Time_step_sequence:", time_step_sequence)
+        print()
+        wandb.log(
+            {"avg_reward": avg_reward,
+             "avg_ssim": avg_ssim,
+             "avg_ddim_ssim": avg_ddim_ssim}
+        )
+        
+
+        ### Save best model
+        if current_best < avg_ssim:
+            print("Saving Model")
+            current_best = avg_ssim
+            save_path = config["save_path"]
+            model.save(f"{save_path}/{epoch}")
+
+        print("---------------")
+        # TODO: remove recorder
+        # recorder.epochTock()
             
-
-            ### Save best model
-            if current_best < avg_ssim:
-                print("Saving Model")
-                current_best = avg_ssim
-                save_path = config["save_path"]
-                model.save(f"{save_path}/{epoch}")
-
-            print("---------------")
-            
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
-    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=20))
+    # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+    # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=20))
 
 
 
@@ -155,30 +161,31 @@ def main():
     )
     # TODO: restore config
     my_config = {
-        "run_id": "SAC_test_v1",
+        "run_id": "PPO_test_128steps_8envs_500epochs_5targetsteps",
 
-        "algorithm": MD_SAC,
+        "algorithm": PPO,
         "policy_network": "MultiInputPolicy",
-        "save_path": "model/sample_model",
+        "save_path": "model/PPO_test_128steps_8envs_500epochs_5targetsteps",
 
-        "epoch_num": 4, # default is 500
+        "epoch_num": 500, # default is 500
         "timesteps_per_epoch": 100,
         "eval_episode_num": 10,
         "learning_rate": 1e-4,
         "policy_kwargs": policy_kwargs,
 
         "DM_model": "model/ddpm_ema_cifar10",
-        "target_steps": 10,
+        "target_steps": 5, # T
         "max_steps": 100,
 
-        "num_train_envs": 8, # default is 16
+        "num_train_envs": 8, # default is 16, 8 is better.
+        "n_steps": 128 # default is 2048
     }
-    # run = wandb.init(
-    #     project="final",
-    #     config=my_config,
-    #     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-    #     id=my_config["run_id"],
-    # )
+    run = wandb.init(
+        project="final",
+        config=my_config,
+        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+        id=my_config["run_id"],
+    )
     
     # Create training environment 
     num_train_envs = my_config['num_train_envs']
@@ -200,10 +207,12 @@ def main():
         verbose=2,
         tensorboard_log=my_config["run_id"],
         learning_rate=my_config["learning_rate"],
-        policy_kwargs=my_config["policy_kwargs"]
+        policy_kwargs=my_config["policy_kwargs"],
+        n_steps=my_config["n_steps"]
     )
 
     train(eval_env, model, my_config)
+    # recorder.printResults()
 
     # obs = env.reset()
     # for _ in range(1000):
