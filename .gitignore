@@ -5,3 +5,4 @@ log/
 PPO*/
 run/
 wandb/
+*.onnx
