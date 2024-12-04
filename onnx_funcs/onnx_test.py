@@ -35,7 +35,10 @@ session = onnxruntime.InferenceSession(onnx_model_path, providers=['CUDAExecutio
 
 # Set a fixed seed for reproducibility
 torch.manual_seed(42)
+torch.cuda.manual_seed(42)
 np.random.seed(42)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 # Define the input shape based on the model's expected dimensions
 batch_size = 1
@@ -65,10 +68,7 @@ dummy_timesteps_onnx = dummy_timesteps_torch.cpu().numpy()
 
 # Run inference with the PyTorch model
 with torch.no_grad():
-    torch_output = pipeline.unet(
-        sample=dummy_input_torch,
-        timesteps=dummy_timesteps_torch,
-    ).cpu().numpy()
+    torch_output = pipeline.unet(dummy_input_torch,dummy_timesteps_torch).sample.cpu().numpy()
 
 # Run inference with the ONNX model
 # Get the input and output names for the ONNX model
