@@ -165,15 +165,15 @@ def main():
         features_extractor_class=CustomCNN,
         features_extractor_kwargs=dict(features_dim=32),
     )
-    # TODO: restore config
+    # TODO: extract config
     my_config = {
         "run_id": "PPO_test_multi",
 
         "algorithm": PPO,
         "policy_network": "MultiInputPolicy",
-        "save_path": "model/PPO_test_onnx",
+        "save_path": "model/PPO_test_multi_cifar10",
 
-        "epoch_num": 1, # default is 500
+        "epoch_num": 500, # default is 500
         "timesteps_per_epoch": 100,
         "eval_episode_num": 10,
         "learning_rate": 1e-4,
