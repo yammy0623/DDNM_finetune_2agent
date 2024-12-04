@@ -14,27 +14,42 @@ import random
 # from perfRecord import PerformanceRecord, recorder
 
 class DiffusionEnv(gym.Env):
-    def __init__(self, model_name, target_steps=10, max_steps=100):
+    def __init__(self, model_name, target_steps=10, max_steps=100, mode="diffusers"):
         super(DiffusionEnv, self).__init__()
         self.target_steps = target_steps
         # Threshold for the sparse reward
         self.final_threshold = 0.9
+        self.mode = mode
         # Load diffusion model
-        if os.path.isdir(model_name):
-            from diffusers_old import DDIMPipeline, DDIMScheduler, UNet2DModel
-            print("Loading model from {}".format(model_name))
-            subfolder = 'unet' if os.path.isdir(os.path.join(model_name, 'unet')) else None
-            self.model = UNet2DModel.from_pretrained(model_name, subfolder=subfolder).eval()
-            scheduler_subfolder = 'scheduler'
-        # standard model
-        else:  
+        if mode == "diffusers":
+            if os.path.isdir(model_name):
+                from diffusers_old import DDIMPipeline, DDIMScheduler, UNet2DModel
+                print("Loading model from {}".format(model_name))
+                subfolder = 'unet' if os.path.isdir(os.path.join(model_name, 'unet')) else None
+                self.model = UNet2DModel.from_pretrained(model_name, subfolder=subfolder).eval()
+                scheduler_subfolder = 'scheduler'
+            # standard model
+            else:  
+                from diffusers import DDIMPipeline, DDIMScheduler, UNet2DModel
+                print("Loading pretrained model from {}".format(model_name))
+                self.model = UNet2DModel.from_pretrained(model_name).to("cuda")
+                scheduler_subfolder = None
+            self.model.to("cuda")
+            self.sample_size = self.model.config.sample_size
+        elif mode == "onnx":
             from diffusers import DDIMPipeline, DDIMScheduler, UNet2DModel
-            print("Loading pretrained model from {}".format(model_name))
-            self.model = UNet2DModel.from_pretrained(model_name).to("cuda")
+            from onnx_wrapper import ONNXUNetWrapper
+            import onnxruntime
+            print(f"Loading pretrained ONNX model from {model_name}")
+            ort_session = onnxruntime.InferenceSession(f"{model_name}.onnx", providers=['CUDAExecutionProvider'])
+            self.model = ONNXUNetWrapper(ort_session)
             scheduler_subfolder = None
-        # DataParellel
-        self.model.to("cuda")
-        self.sample_size = self.model.config.sample_size
+            self.sample_size = ort_session.get_inputs()[0].shape[2] # TODO: debugged, should not have any problem.
+        else:
+            print("mode not recognized, exiting...")
+            exit()
+        # TODO: DataParellel
+            
         # RL steps
         self.scheduler = DDIMScheduler.from_pretrained(model_name, subfolder=scheduler_subfolder)
         self.scheduler.set_timesteps(max_steps)
@@ -63,7 +78,7 @@ class DiffusionEnv(gym.Env):
         for t in self.scheduler.timesteps:
             with torch.no_grad():
                 noisy_residual = self.model(input, t).sample
-                prev_noisy_sample = self.scheduler.step(noisy_residual, t, input, generator=self.generator).prev_sample
+                prev_noisy_sample = self.scheduler.step(noisy_residual, t, input, generator=self.generator).prev_sample # TODO: device
                 input = prev_noisy_sample
         self.GT_image = input.cpu()
 
@@ -96,7 +111,7 @@ class DiffusionEnv(gym.Env):
                 input = prev_noisy_sample
         self.GT_image = input.cpu()
         observation = {
-            "image": self.current_image.cpu().numpy(),  
+            "image": self.current_image.squeeze(0).cpu().numpy(),  
             "value": np.array([999])
         }
         # images = (self.GT_image / 2 + 0.5).clamp(0, 1)
@@ -154,7 +169,7 @@ class DiffusionEnv(gym.Env):
                 generator=self.generator
             )
             self.prev_pred_original_image = scheduler_step.pred_original_sample
-            self.prev_pred_epsilon = scheduler_step.pred_epsilon
+            self.prev_pred_epsilon = scheduler_step.pred_epsilon # TODO: error for ONNX：None
             prev_noisy_sample = self.ddim_scheduler.step(
                 noisy_residual,
                 t,
@@ -199,8 +214,8 @@ class DiffusionEnv(gym.Env):
         }
         # print('info:', info)
         observation = {
-            "image": self.current_image,  
-            "value": t
+            "image": self.current_image.squeeze(0),  
+            "value": np.array([t.item()]) # TODO: check shape
         }
         #     prof.step()
         # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))

@@ -33,11 +33,13 @@ def make_env(my_config):
         config = {
             "model_name": my_config["DM_model"],
             "target_steps": my_config["target_steps"],
-            "max_steps": my_config["max_steps"]
+            "max_steps": my_config["max_steps"],
+            "mode": my_config["mode"]
         }
         return gym.make('final-v0', **config)
     return _init
 
+# TODO: cnn expected 4 dim., got 5.
 class CustomCNN(BaseFeaturesExtractor):
     """
     :param observation_space: (gym.Space)
@@ -68,8 +70,12 @@ class CustomCNN(BaseFeaturesExtractor):
         self.linear = nn.Sequential(nn.Linear(n_flatten + 32, features_dim), nn.ReLU())
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
-        img_features = self.cnn(observations['image'].float())
-        value_features = F.relu(self.fc(observations['value'].float()))
+        # images = observations['image'].squeeze(1)
+        images = observations['image']
+        img_features = self.cnn(images.float())
+        value = observations['value'].float()   # Shape: [batch_size]
+        value = value.view(-1, 1)             # Add extra dimension: [batch_size, 1]
+        value_features = F.relu(self.fc(value))
         combined = th.cat([img_features, value_features], dim=1)
         return self.linear(combined)
     
@@ -161,21 +167,24 @@ def main():
     )
     # TODO: restore config
     my_config = {
-        "run_id": "PPO_test_128steps_8envs_500epochs_5targetsteps",
+        "run_id": "PPO_test_multi",
 
         "algorithm": PPO,
         "policy_network": "MultiInputPolicy",
-        "save_path": "model/PPO_test_128steps_8envs_500epochs_5targetsteps",
+        "save_path": "model/PPO_test_onnx",
 
-        "epoch_num": 500, # default is 500
+        "epoch_num": 1, # default is 500
         "timesteps_per_epoch": 100,
         "eval_episode_num": 10,
         "learning_rate": 1e-4,
         "policy_kwargs": policy_kwargs,
 
         "DM_model": "model/ddpm_ema_cifar10",
-        "target_steps": 5, # T
+        # "DM_model": "model/ddpm-ema-church-256",
+        "target_steps": 10, # T
         "max_steps": 100,
+        "mode": "diffusers", # onnx, diffusers
+        # "mode": "onnx", # onnx, diffusers
 
         "num_train_envs": 8, # default is 16, 8 is better.
         "n_steps": 128 # default is 2048
@@ -189,8 +198,8 @@ def main():
     
     # Create training environment 
     num_train_envs = my_config['num_train_envs']
-    train_env = DummyVecEnv([make_env(my_config) for _ in range(num_train_envs)])
-    # train_env = SubprocVecEnv([make_env(my_config) for _ in range(num_train_envs)])
+    # train_env = DummyVecEnv([make_env(my_config) for _ in range(num_train_envs)])
+    train_env = SubprocVecEnv([make_env(my_config) for _ in range(num_train_envs)])
     
     # env = DiffusionEnv('google/ddpm-cifar10-32')
     # model = SAC("CnnPolicy", env, policy_kwargs=policy_kwargs, verbose=1)
