@@ -6,3 +6,5 @@ PPO*/
 run/
 wandb/
 *.onnx
+diffusers_old/
+**/launch.json 
