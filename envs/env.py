@@ -215,7 +215,7 @@ class DiffusionEnv(gym.Env):
         # print('info:', info)
         observation = {
             "image": self.current_image.squeeze(0),  
-            "value": np.array([t.item()]) # TODO: check shape
+            "value": np.array([t.item()]) # make sure it has the shape of (1,)
         }
         #     prof.step()
         # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
