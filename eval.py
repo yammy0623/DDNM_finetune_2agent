@@ -56,10 +56,11 @@ if __name__ == "__main__":
         features_extractor_class=CustomCNN,
         features_extractor_kwargs=dict(features_dim=32),
     )
+    # Restore config
     my_config = {
         "run_id": args.run_id,
 
-        "algorithm": MD_SAC,
+        "algorithm": PPO,
         "policy_network": "MultiInputPolicy",
         "save_path": args.save_path,
 
@@ -70,12 +71,12 @@ if __name__ == "__main__":
         "max_steps": args.target_steps,
 
         "num_eval_envs": 1,
-        "eval_num": 50000,
+        "eval_num": 50000, # 50000
         "img_save_path": args.img_save_path,
         "action_range": args.action_range
     }
     ### Load model with SB3
-    model = SAC.load(my_config['save_path'])
+    model = PPO.load(my_config['save_path'])
     env = DummyVecEnv([make_env(my_config) for _ in range(my_config['num_eval_envs'])])
     
     evaluation(env, model, my_config['eval_num'])

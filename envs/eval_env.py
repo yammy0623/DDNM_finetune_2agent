@@ -70,7 +70,7 @@ class EvalDiffusionEnv(gym.Env):
         self.time_step_sequence = []
         self.current_image = torch.randn((1, 3, self.sample_size, self.sample_size), device="cuda", generator=self.generator)
         observation = {
-            "image": self.current_image.cpu().numpy(),  
+            "image": self.current_image.squeeze(0).cpu().numpy(),  
             "value": np.array([999])
         }
         return observation, {}
@@ -119,8 +119,8 @@ class EvalDiffusionEnv(gym.Env):
         }
         # print('info:', info)
         observation = {
-            "image": self.current_image,  
-            "value": t
+            "image": self.current_image.squeeze(0),  
+            "value": np.array([t.item()]) # make sure it has the shape of (1,)
         }
         # Save the image if done
         if done and self.img_save_path is not None:
