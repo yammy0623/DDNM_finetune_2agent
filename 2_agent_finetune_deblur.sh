@@ -5,9 +5,9 @@ IMAGE_FOLDER="/tmp2/ICML2025/ddnm_finetune/imagenet"
 # train ours (1st subtask)
 export CUDA_VISIBLE_DEVICES=1
 # train ours (1st subtask)
-python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5
+# python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5
 # eval ours (1st subtask)
-python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1.txt
+# python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1.txt
 # train ours (2nd subtask)
 python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage
 # eval ours
@@ -54,13 +54,13 @@ done
 
 # DB 5
 # train ours (1st subtask)
-CUDA_VISIBLE_DEVICES=1 python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5
-# eval ours (1st subtask)
-CUDA_VISIBLE_DEVICES=1 python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1.txt
-# # # train ours (2nd subtask)
-CUDA_VISIBLE_DEVICES=1 python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage
-# # # eval ours
-CUDA_VISIBLE_DEVICES=1 python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents.txt
+# CUDA_VISIBLE_DEVICES=1 python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5
+# # eval ours (1st subtask)
+# CUDA_VISIBLE_DEVICES=1 python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1.txt
+# # # # train ours (2nd subtask)
+# CUDA_VISIBLE_DEVICES=1 python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage
+# # # # eval ours
+# CUDA_VISIBLE_DEVICES=1 python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents.txt
 
 # DB 10
 # train ours (1st subtask)

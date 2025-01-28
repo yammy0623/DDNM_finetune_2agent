@@ -35,8 +35,10 @@ def make_env(my_config):
             "max_steps": my_config["max_steps"],
             "threshold": my_config["threshold"],
             "DM": my_config["DM"],
-            "agent2": my_config["agent2"],
         }
+        if my_config["agent2"] is not None:
+            config["agent2"] = my_config["agent2"]
+        
         if my_config["model_mode"] == "baseline":
             print('Baseline training mode ...')
             return gym.make('final-baseline', **config)
@@ -207,7 +209,8 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5):
     """Train agent using SB3 algorithm and my_config"""
     current_best_psnr = 0
     current_best_ssim = 0
-    for epoch in range(epoch_num):
+    print("total training epochs: ", int(epoch_num))
+    for epoch in range(int(epoch_num)):
 
         model.learn(
             total_timesteps=config["timesteps_per_epoch"],
@@ -305,13 +308,14 @@ def main():
 
     }
     
-    my_config['run_id'] = f'{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_Remain3.2_A2C_env_{my_config["num_train_envs"]}_steps_{my_config["target_steps"]}'
+    my_config['run_id'] = f'{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_A2C_env_{my_config["num_train_envs"]}_steps_{my_config["target_steps"]}'
     if args.baseline == False:
         if args.second_stage:
             my_config['run_id'] += '_S2'
         else:
             my_config['run_id'] += '_S1'
-    my_config['save_path'] = f'model/{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_Remain3_A2C_{my_config["target_steps"]}'
+
+    my_config['save_path'] = f'model/{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_A2C_{my_config["target_steps"]}'
     run = wandb.init(
         project="final",
         config=my_config,
@@ -358,7 +362,7 @@ def main():
 
         ### First stage finetuning stage (need to load agent 2)
         if args.finetune:
-            agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best2")
+            agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best_2")
             config['agent2'] = agent2
             train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
             
@@ -385,9 +389,10 @@ def main():
         print("Loaded model from: ", f"{my_config['save_path']}/best")
         agent1 = my_config["algorithm"].load(f"{my_config['save_path']}/best")
         config['agent1'] = agent1
+        config['agent2'] = None
         config["model_mode"] = my_config["model_mode"]
         train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
-        del config["model_mode"]
+        del config["model_mode"], config['agent2']
         eval_env = gym.make('final-ours', **config)
         model2 = my_config["algorithm"](
             my_config["policy_network"], 

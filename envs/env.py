@@ -137,10 +137,10 @@ class DiffusionEnv(gym.Env):
 
 
         
-        # observation = {
-        #     "image": self.x0_t[0].cpu(),  
-        #     # "value": np.array([999]),
-        # }
+        observation = {
+            "image": self.x0_t[0].cpu(),  
+            # "value": np.array([999]),
+        }
         
         # Fist subtask finetuning by agent2
         # if self.agent2:
@@ -184,7 +184,11 @@ class DiffusionEnv(gym.Env):
                 ddim_mse = torch.mean((ddim_x - orig) ** 2)
                 self.pivot_psnr = 10 * torch.log10(1 / ddim_mse).item()
                 self.pivot_ssim = structural_similarity(ddim_x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
-        
+                observation = {
+                    "image": self.x0_t[0].cpu(), 
+                    "value": np.array([999]),
+                    "remain": np.array([self.target_steps]),
+                }
         del ddim_x, ddim_x0_t, ddim_mse, orig
         gc.collect()
         torch.cuda.empty_cache()  # Clear GPU cache
@@ -193,17 +197,6 @@ class DiffusionEnv(gym.Env):
         # images = Image.fromarray((images * 255).round().astype("uint8"))
         # filename = os.path.join('img', f"GT_{self.current_step_num}.png")
         # images.save(filename)
-        if self.adjust:
-            observation = {
-                "image": self.x0_t[0].cpu(), 
-                "Value": np.array([999]),
-                "remain": np.array([self.target_steps]),
-            }
-        else:
-            observation = {
-                "image": self.x0_t[0].cpu(),  
-            }
-
         
 
         return observation, {}
