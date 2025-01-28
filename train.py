@@ -355,7 +355,7 @@ def main():
             epoch_num = my_config["first_stage_epoch_num"]
 
         if args.finetune:
-            epoch_num = epoch_num *0.1
+            epoch_num = epoch_num * args.finetune_ratio
             print("finetune: training with epoch_num = ", epoch_num)
         else:
             print("training with epoch_num = ", epoch_num)
@@ -388,7 +388,7 @@ def main():
         ### Second stage training
         epoch_num = my_config['epoch_num']
         if args.finetune:
-            epoch_num = epoch_num *0.1
+            epoch_num = epoch_num * args.finetune_ratio
             print("finetune: training with epoch_num = ", epoch_num)
         else:
             print("training with epoch_num = ", epoch_num)

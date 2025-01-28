@@ -118,6 +118,12 @@ def parse_args_and_config():
         default=0,
         help="finetune 1 on | 0 off"
     )
+    parser.add_argument(
+        "--finetune_ratio",
+        type=float,
+        default=0.1,
+        help="finetune ratio"
+    )
     parser.add_argument("--input_root", type=str, default="/tmp2/ICML2025", help="The root folder of input images")
     
 
