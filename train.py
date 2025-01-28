@@ -35,6 +35,7 @@ def make_env(my_config):
             "max_steps": my_config["max_steps"],
             "threshold": my_config["threshold"],
             "DM": my_config["DM"],
+            "agent2": my_config["agent2"],
         }
         if my_config["model_mode"] == "baseline":
             print('Baseline training mode ...')
@@ -96,23 +97,53 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.ReLU()
         )
 
+    # def forward(self, observations: th.Tensor) -> th.Tensor:
+    #     img_features = self.cnn(observations['image'].float())
+    #     value_features = F.relu(self.fc(observations['value'].float()))
+        
+    #     if 'remain' in observations:
+    #         remain_features = F.relu(self.fc2(observations['remain'].float()))
+    #         value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
+
+    #     if self.use_scale_shift_norm:
+    #         emb_out = self.embedding_output(value_features)
+    #         scale, shift = th.chunk(emb_out, 2, dim=1)
+    #         h = self.out_norm(img_features) * (1 + scale) + shift
+    #         h = self.out_rest(h)
+    #     else:
+    #         h = self.out_rest(self.out_norm(img_features + value_features))
+
+    #     return h
     def forward(self, observations: th.Tensor) -> th.Tensor:
         img_features = self.cnn(observations['image'].float())
-        value_features = F.relu(self.fc(observations['value'].float()))
-        
+        value_features = None
+
+        if 'value' in observations:  # 確認是否有 'value' 特徵
+            value_features = F.relu(self.fc(observations['value'].float()))
+
         if 'remain' in observations:
             remain_features = F.relu(self.fc2(observations['remain'].float()))
-            value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
+            if value_features is not None:
+                value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
+            else:
+                value_features = remain_features  # 只有 'remain' 時，直接用 remain_features
 
         if self.use_scale_shift_norm:
-            emb_out = self.embedding_output(value_features)
-            scale, shift = th.chunk(emb_out, 2, dim=1)
-            h = self.out_norm(img_features) * (1 + scale) + shift
+            if value_features is not None:
+                emb_out = self.embedding_output(value_features)
+                scale, shift = th.chunk(emb_out, 2, dim=1)
+                h = self.out_norm(img_features) * (1 + scale) + shift
+            else:
+                h = self.out_norm(img_features)  # 沒有 value_features，只用 img_features
             h = self.out_rest(h)
         else:
-            h = self.out_rest(self.out_norm(img_features + value_features))
+            if value_features is not None:
+                h = self.out_rest(self.out_norm(img_features + value_features))
+            else:
+                h = self.out_rest(self.out_norm(img_features))  # 沒有 value_features
 
         return h
+
 
 def eval(env, model, eval_episode_num, num_steps):
     """Evaluate the model and return avg_score and avg_highest"""
@@ -270,6 +301,7 @@ def main():
         "max_steps": 100,
         "task": args.deg,
         "model_mode": "baseline" if args.baseline else "2_agents",
+        "finetune": args.finetune,
 
     }
     
@@ -292,46 +324,67 @@ def main():
             "max_steps": my_config["max_steps"],
             "threshold": my_config["threshold"],
             "DM": runner,
-            # "agent1": None,
             "model_mode": my_config["model_mode"],
         }
     if args.baseline == False:
         config["agent1"] = None
+
     # Create training environment 
     num_train_envs = my_config['num_train_envs']
-    train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
+    # train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
     # train_env = SubprocVecEnv([make_env(my_config) for _ in range(num_train_envs)])
 
     # Create evaluation environment (via gym API)
     # eval_env = DummyVecEnv([make_env(my_config)])  
 
     # Create evaluation environment (via SB3 API)
-    del config["model_mode"]
-    eval_env = gym.make('final-baseline', **config) if args.baseline else gym.make('final-ours', **config)
+    # del config["model_mode"]
 
     # Create model from loaded config and train
     # Note: Set verbose to 0 if you don't want info messages
-    model = my_config["algorithm"](
-        my_config["policy_network"], 
-        train_env, 
-        verbose=2,
-        tensorboard_log=my_config["run_id"],
-        learning_rate=my_config["learning_rate"],
-        policy_kwargs=my_config["policy_kwargs"],
-        # ent_coef=0.05,
-        # n_steps=128,
-        # batch_size=my_config["batch_size"],
-        # buffer_size=100000,
-    )
-    if args.second_stage == False:
+    
+    if not args.second_stage:
         ### First stage training
-        epoch_num = my_config['epoch_num'] if args.baseline else my_config["first_stage_epoch_num"]
+        if args.baseline:
+            epoch_num = my_config['epoch_num'] 
+        else: 
+            epoch_num = my_config["first_stage_epoch_num"]
+
+        if args.finetune:
+            epoch_num = epoch_num *0.1
+            print("finetune: training with epoch_num = ", epoch_num)
+        else:
+            print("training with epoch_num = ", epoch_num)
+
+        ### First stage finetuning stage (need to load agent 2)
+        if args.finetune:
+            agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best2")
+            config['agent2'] = agent2
+            train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
+            
+        else:
+            config['agent2'] = None
+            train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
+        
+
+        model = my_config["algorithm"](
+                my_config["policy_network"], 
+                train_env, 
+                verbose=2,
+                tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
+                learning_rate=my_config["learning_rate"],
+                policy_kwargs=my_config["policy_kwargs"],
+            )
+        del config["model_mode"], config["agent2"]
+        eval_env = gym.make('final-baseline', **config) if args.baseline else gym.make('final-ours', **config)
+        
         train(eval_env, model, my_config, epoch_num = epoch_num, num_steps = args.target_steps)
+        
     else:
         ### Second stage training
         print("Loaded model from: ", f"{my_config['save_path']}/best")
-        model = A2C.load(f"{my_config['save_path']}/best")
-        config['agent1'] = model
+        agent1 = my_config["algorithm"].load(f"{my_config['save_path']}/best")
+        config['agent1'] = agent1
         config["model_mode"] = my_config["model_mode"]
         train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
         del config["model_mode"]
@@ -340,7 +393,7 @@ def main():
             my_config["policy_network"], 
             train_env, 
             verbose=2,
-            tensorboard_log=my_config["run_id"],
+            tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
             learning_rate=my_config["learning_rate"],
             policy_kwargs=my_config["policy_kwargs"],
         )

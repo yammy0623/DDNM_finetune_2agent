@@ -112,6 +112,15 @@ def parse_args_and_config():
         help="baseline | subtask1_conti | subtask2 | compare | dense | percent"
     )
 
+    parser.add_argument(
+        "--finetune",
+        type=int,
+        default=0,
+        help="finetune 1 on | 0 off"
+    )
+    parser.add_argument("--input_root", type=str, default="/tmp2/ICML2025", help="The root folder of input images")
+    
+
 
     args = parser.parse_args()
 

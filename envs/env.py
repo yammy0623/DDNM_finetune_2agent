@@ -14,10 +14,11 @@ import gc
 from tqdm import tqdm
 
 class DiffusionEnv(gym.Env):
-    def __init__(self, target_steps=10, max_steps=100, threshold=0.8, DM=None, agent1=None):
+    def __init__(self, target_steps=10, max_steps=100, threshold=0.8, DM=None, agent1=None, agent2=None):
         super(DiffusionEnv, self).__init__()
         self.DM = DM
         self.agent1 = agent1
+        self.agent2 = agent2
         self.target_steps = target_steps
         self.uniform_steps = [i for i in range(0, 999, 1000//target_steps)][::-1]
         # Threshold for the sparse reward
@@ -44,8 +45,9 @@ class DiffusionEnv(gym.Env):
             # self.action_space = gym.spaces.Box(low=0, high=1) # Continuous action space
             self.observation_space = Dict({
                 "image": Box(low=0, high=1, shape=(3, self.sample_size, self.sample_size), dtype=np.float32),
-                "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
+                # "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
+
         # Initialize the random seed
         self.seed(232)
         self.reset()
@@ -135,11 +137,25 @@ class DiffusionEnv(gym.Env):
 
 
         
+        # observation = {
+        #     "image": self.x0_t[0].cpu(),  
+        #     # "value": np.array([999]),
+        # }
+        
+        # Fist subtask finetuning by agent2
+        # if self.agent2:
+        #     self.time_step_sequence2 = []
+            # observation2 = {
+            #     "image": self.x0_t[0].cpu(),  
+            #     "value": np.array([999]),
+            #     "remain": np.array([self.target_steps]),
+            # }
+            # action, _state = self.agent2.predict(observation2, deterministic=True)
+            # start_t = 10 * (1+action) - 1
+            # t = torch.tensor(int(max(0, min(start_t, 999))))
+            # self.previous_t2 = t
+            # self.interval2 = int(t / (self.target_steps - 1)) 
 
-        observation = {
-            "image": self.x0_t[0].cpu(),  
-            "value": np.array([999]),
-        }
         
         if self.adjust: # Second subtask
             with torch.no_grad():
@@ -151,18 +167,7 @@ class DiffusionEnv(gym.Env):
                 self.previous_t = t
                 self.interval = int(t / (self.target_steps - 1)) 
                 self.uniform_interval = self.interval
-                # self.x = self.DM.get_noisy_x(t, self.x0_t, initial=True)
-                # self.action_sequence.append(action.item())
-                # self.previous_t = t
-                # self.x0_t, _,  self.et = self.DM.single_step_ddnm(self.x, self.y, t, self.classes)
-                # self.time_step_sequence.append(t.item())
-                # observation = {
-                #     "image": self.x0_t[0].cpu(),
-                #     # "image2": self.Apy[0].cpu(),
-                #     "value": np.array([t]),
-                #     "remain": np.array([self.target_steps - self.current_step_num - 1])
-                # }
-                # self.current_step_num += 1
+
 
                 # Save subtask1 performance
                 ddim_x0_t = self.A_inv_y.clone()
@@ -189,7 +194,18 @@ class DiffusionEnv(gym.Env):
         # filename = os.path.join('img', f"GT_{self.current_step_num}.png")
         # images.save(filename)
         if self.adjust:
-            observation["remain"] = np.array([self.target_steps])
+            observation = {
+                "image": self.x0_t[0].cpu(), 
+                "Value": np.array([999]),
+                "remain": np.array([self.target_steps]),
+            }
+        else:
+            observation = {
+                "image": self.x0_t[0].cpu(),  
+            }
+
+        
+
         return observation, {}
     
     def step(self, action):
@@ -219,6 +235,7 @@ class DiffusionEnv(gym.Env):
                 self.x = self.DM.get_noisy_x(t, self.x0_t, self.et) if self.current_step_num != 0 else self.DM.get_noisy_x(t, self.x0_t, initial=True)
                 # self.pivot_x = self.DM.get_noisy_x(initial_t, self.x0_t, self.et)
                 self.action_sequence.append(action.item())
+
             self.previous_t = t
             self.x0_t, _,  self.et = self.DM.single_step_ddnm(self.x, self.y, t, self.classes)
             # self.pivot_x0_t, _,  self.pivot_et = self.DM.single_step_ddnm(self.pivot_x, self.y, initial_t, self.classes)
@@ -227,13 +244,120 @@ class DiffusionEnv(gym.Env):
             # Run the remaining steps with uniform sampling to get x_0|t for reward calculation
             self.uniform_x0_t = self.x0_t.clone()
             self.uniform_et = self.et.clone()
-            for i in range(self.target_steps - self.current_step_num - 1):
-                uniform_t = torch.tensor(int(t - self.interval - self.interval * i))
-                uniform_t = torch.tensor(max(0, min(uniform_t, 999)))
-                self.uniform_x = self.DM.get_noisy_x(uniform_t, self.uniform_x0_t, self.uniform_et)
-                self.uniform_x0_t, _,  self.uniform_et = self.DM.single_step_ddnm(self.uniform_x, self.y, uniform_t, self.classes)
-                if self.adjust == False: # First subtask
-                    self.time_step_sequence.append(uniform_t.item())
+
+
+            isFromDegraded = True
+            ### inference the remaining steps by agent2 in subtask 1
+            self.time_step_sequence2 = []
+            if self.agent2:
+                print("inference by agent2")
+                self.agent2_x0_t = self.x0_t.clone()
+                self.agent2_et = self.et.clone()
+
+                # start from degraded image
+                if isFromDegraded:
+                    self.agent2_x0_t = self.A_inv_y.clone()
+                    observation2 = {
+                        "image": self.agent2_x0_t[0].cpu(),  
+                        "value": np.array([999]),
+                        "remain": np.array([self.target_steps]),
+                    }
+                    
+                    # starting t is from agent 1 prediction
+                    previous_t2 = self.previous_t.clone()
+                    interval2 = self.interval
+                    
+                    # agent 2 needs target step - 1 steps to finish the denoising 
+                    # (still need to modify the first step from agent1) 
+                    for agent2_step_num in range(self.target_steps):
+                        print("remaining steps:", self.target_steps - agent2_step_num -1)
+                        action2, _state = self.agent2.predict(observation2, deterministic=True)
+                        
+                        if agent2_step_num != 0 :
+                            initial_t2 = previous_t2 - interval2 
+                        else:
+                            initial_t2 = previous_t2
+
+                        t = initial_t2 - interval2 * action2
+                        
+                        # prevent t from exceeding the previous time step
+                        thres = 999 if agent2_step_num == 0 else self.time_step_sequence[-1]
+                        t = torch.tensor(int(max(0, min(t, thres))))
+
+                        if (self.target_steps - agent2_step_num - 1) != 0:
+                            interval2 = int(t / (self.target_steps - agent2_step_num - 1)) 
+                    
+                        self.agent2_x = self.DM.get_noisy_x(t, self.agent2_x0_t, self.agent2_et)
+                        self.agent2_x0_t, _,  self.agent2_et = self.DM.single_step_ddnm(self.agent2_x, self.y, t, self.classes)
+                        
+                        
+                        observation2 = {
+                            "image": self.agent2_x0_t[0].cpu(),  
+                            "value": np.array([t]),
+                            "remain": np.array([self.target_steps - agent2_step_num - 1])
+                        }
+                        self.time_step_sequence2.append(t.item())
+                        agent2_step_num += 1
+                
+                # start from x0_t and t predicted by agent 1
+                else:
+                    observation2 = {
+                        "image": self.agent2_x0_t[0].cpu(),  
+                        "value": np.array([self.previous_t]), # or 999?
+                        "remain": np.array([self.target_steps]),
+                    }
+
+                    # starting t is from agent 1 prediction
+                    previous_t2 = self.previous_t.clone()
+                    interval2 = self.interval
+                    self.time_step_sequence2.append(t.item())
+
+                    # agent 2 needs target step - 1 steps to finish the denoising 
+                    # don't need to modify the first step from agent1
+                    for agent2_step_num in range(self.target_steps - self.current_step_num -1):
+                        print("remaining steps:", self.target_steps - agent2_step_num -1)
+                        action2, _state = self.agent2.predict(observation2, deterministic=True)
+                        
+                        if agent2_step_num != 0 :
+                            initial_t2 = previous_t2 - interval2 
+                        else:
+                            initial_t2 = previous_t2
+
+                        t = initial_t2 - interval2 * action2
+                        
+                        # prevent t from exceeding the previous time step
+                        thres = 999 if agent2_step_num == 0 else self.time_step_sequence[-1]
+                        t = torch.tensor(int(max(0, min(t, thres))))
+
+                        if (self.target_steps - agent2_step_num - 1) != 0:
+                            interval2 = int(t / (self.target_steps - agent2_step_num - 1)) 
+                    
+                        self.agent2_x = self.DM.get_noisy_x(t, self.agent2_x0_t, self.agent2_et)
+                        self.agent2_x0_t, _,  self.agent2_et = self.DM.single_step_ddnm(self.agent2_x, self.y, t, self.classes)
+                        
+                        
+                        observation2 = {
+                            "image": self.agent2_x0_t[0].cpu(),  
+                            "value": np.array([t]),
+                            "remain": np.array([self.target_steps - agent2_step_num - 1])
+                        }
+                        self.time_step_sequence2.append(t.item())
+                        agent2_step_num += 1
+                    
+                print("agent2 done, time_step_sequence2:", self.time_step_sequence2)
+                self.time_step_sequence = self.time_step_sequence2
+                    
+            else:
+                # print("uniform sampling")
+                for i in range(self.target_steps - self.current_step_num - 1):
+                    uniform_t = torch.tensor(int(t - self.interval - self.interval * i))
+                    uniform_t = torch.tensor(max(0, min(uniform_t, 999)))
+                    self.uniform_x = self.DM.get_noisy_x(uniform_t, self.uniform_x0_t, self.uniform_et)
+                    self.uniform_x0_t, _,  self.uniform_et = self.DM.single_step_ddnm(self.uniform_x, self.y, uniform_t, self.classes)
+                    if self.adjust == False: # First subtask
+                        self.time_step_sequence.append(uniform_t.item())
+
+            
             
             # Run the remaining steps with uniform sampling to get pivot_x_0|t for reward calculation
             # for i in range(self.target_steps - self.current_step_num - 1):
@@ -277,7 +401,7 @@ class DiffusionEnv(gym.Env):
         else:
             observation = {
                 "image":  self.x0_t[0].cpu(),  
-                "value": np.array([t])
+                # "value": np.array([t])
             }
         self.current_step_num += 1
         torch.cuda.empty_cache()  # Clear GPU cache
@@ -294,6 +418,8 @@ class DiffusionEnv(gym.Env):
         orig = inverse_data_transform(self.DM.config, self.x_orig[0]).to(self.DM.device)
         if done and self.adjust: # Second subtask done
             x = inverse_data_transform(self.DM.config, self.x0_t[0]).to(self.DM.device)
+        elif self.agent2:
+            x = inverse_data_transform(self.DM.config, self.agent2_x0_t[0]).to(self.DM.device)
         else: # First subtask or Second subtask not done
             x = inverse_data_transform(self.DM.config, self.uniform_x0_t[0]).to(self.DM.device)
         # pivot_x = inverse_data_transform(self.DM.config, self.pivot_x0_t[0]).to(self.DM.device)

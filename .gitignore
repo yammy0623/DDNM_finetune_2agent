@@ -1,0 +1,10 @@
+**/__pycache__/
+.vscode/
+output.txt
+images/
+output.csv
+wandb/
+tensorboard_log/
+model/
+2_agents_sub1.txt
+2_agents_sub2.txt
