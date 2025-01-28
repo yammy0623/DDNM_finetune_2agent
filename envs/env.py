@@ -263,7 +263,7 @@ class DiffusionEnv(gym.Env):
                     # agent 2 needs target step - 1 steps to finish the denoising 
                     # (still need to modify the first step from agent1) 
                     for agent2_step_num in range(self.target_steps):
-                        print("remaining steps:", self.target_steps - agent2_step_num -1)
+                        # print("remaining steps:", self.target_steps - agent2_step_num -1)
                         action2, _state = self.agent2.predict(observation2, deterministic=True)
                         
                         if agent2_step_num != 0 :

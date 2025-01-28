@@ -386,6 +386,13 @@ def main():
         
     else:
         ### Second stage training
+        epoch_num = my_config['epoch_num']
+        if args.finetune:
+            epoch_num = epoch_num *0.1
+            print("finetune: training with epoch_num = ", epoch_num)
+        else:
+            print("training with epoch_num = ", epoch_num)
+
         print("Loaded model from: ", f"{my_config['save_path']}/best")
         agent1 = my_config["algorithm"].load(f"{my_config['save_path']}/best")
         config['agent1'] = agent1
@@ -402,7 +409,7 @@ def main():
             learning_rate=my_config["learning_rate"],
             policy_kwargs=my_config["policy_kwargs"],
         )
-        train(eval_env, model2, my_config, epoch_num = my_config["epoch_num"], second_stage=True, num_steps = args.target_steps)
+        train(eval_env, model2, my_config, epoch_num = epoch_num, second_stage=True, num_steps = args.target_steps)
 
 if __name__ == '__main__':
     main()
