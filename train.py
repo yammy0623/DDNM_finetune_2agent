@@ -118,7 +118,7 @@ class CustomCNN(BaseFeaturesExtractor):
         img_features = self.cnn(observations['image'].float())
         value_features = None
 
-        if 'value' in observations:  # 確認是否有 'value' 特徵
+        if 'value' in observations:
             value_features = F.relu(self.fc(observations['value'].float()))
 
         if 'remain' in observations:
@@ -126,7 +126,7 @@ class CustomCNN(BaseFeaturesExtractor):
             if value_features is not None:
                 value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
             else:
-                value_features = remain_features  # 只有 'remain' 時，直接用 remain_features
+                value_features = remain_features  
 
         if self.use_scale_shift_norm:
             if value_features is not None:
@@ -134,13 +134,13 @@ class CustomCNN(BaseFeaturesExtractor):
                 scale, shift = th.chunk(emb_out, 2, dim=1)
                 h = self.out_norm(img_features) * (1 + scale) + shift
             else:
-                h = self.out_norm(img_features)  # 沒有 value_features，只用 img_features
+                h = self.out_norm(img_features) 
             h = self.out_rest(h)
         else:
             if value_features is not None:
                 h = self.out_rest(self.out_norm(img_features + value_features))
             else:
-                h = self.out_rest(self.out_norm(img_features))  # 沒有 value_features
+                h = self.out_rest(self.out_norm(img_features))
 
         return h
 

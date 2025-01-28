@@ -1,30 +1,30 @@
 EXP="/tmp2/ICML2025/ddnm_finetune"
 IMAGE_FOLDER="/tmp2/ICML2025/ddnm_finetune/imagenet"
 
-# SR 5
+# Deblur
 # train ours (1st subtask)
 export CUDA_VISIBLE_DEVICES=1
 # train ours (1st subtask)
-python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5
+python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5
 # eval ours (1st subtask)
-python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1.txt
+python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1.txt
 # train ours (2nd subtask)
-python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage
+python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage
 # eval ours
-python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents.txt
+python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents.txt
 
 # finetune
 
 for Iter in {1..5}; do
     echo "Iteration: $Iter"
     # train ours (1st subtask)
-    python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --finetune 1
+    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --finetune 1
     # eval ours (1st subtask)
-    python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1_finetune.txt
+    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/subtask1_finetune.txt
     # train ours (2nd subtask)
-    python train.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage
+    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage
     # eval ours
-    python eval.py --ni --config imagenet_256.yml --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents_finetune.txt
+    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents_finetune.txt
 done
 
 
