@@ -45,7 +45,7 @@ class DiffusionEnv(gym.Env):
             # self.action_space = gym.spaces.Box(low=0, high=1) # Continuous action space
             self.observation_space = Dict({
                 "image": Box(low=0, high=1, shape=(3, self.sample_size, self.sample_size), dtype=np.float32),
-                # "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
+                "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
 
         # Initialize the random seed
@@ -139,7 +139,7 @@ class DiffusionEnv(gym.Env):
         
         observation = {
             "image": self.x0_t[0].cpu(),  
-            # "value": np.array([999]),
+            "value": np.array([999]),
         }
         
         # Fist subtask finetuning by agent2
@@ -394,7 +394,7 @@ class DiffusionEnv(gym.Env):
         else:
             observation = {
                 "image":  self.x0_t[0].cpu(),  
-                # "value": np.array([t])
+                "value": np.array([t])
             }
         self.current_step_num += 1
         torch.cuda.empty_cache()  # Clear GPU cache

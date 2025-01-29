@@ -35,7 +35,7 @@ class EvalDiffusionEnv(gym.Env):
                 self.action_space = spaces.Discrete(discrete_space) # Discrete action space
             self.observation_space = Dict({
                 "image": Box(low=-1, high=1, shape=(3, self.sample_size, self.sample_size), dtype=np.float32),
-                # "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
+                "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
         else: # Subtask 2
             self.action_space = gym.spaces.Box(low=-5, high=5)
@@ -67,7 +67,7 @@ class EvalDiffusionEnv(gym.Env):
 
         observation = {
             "image": self.x0_t[0].cpu(),  
-            # "value": np.array([999])
+            "value": np.array([999])
         }
         if self.agent1 is not None: # Subtask 2
             with torch.no_grad():
@@ -157,7 +157,7 @@ class EvalDiffusionEnv(gym.Env):
         if self.agent1 is None: # Subtask 1
             observation = {
                 "image": self.x0_t[0].cpu(),  
-                # "value": np.array([t])
+                "value": np.array([t])
             }
         else: # Subtask 2
             observation = {

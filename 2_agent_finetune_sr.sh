@@ -16,15 +16,16 @@ cp ./model/sr_bicubic_imagenet_2_agents_A2C_5/best.zip ./model/sr_bicubic_imagen
 cp ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_2.zip ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_2_orig.zip
 # finetune
 
+FINERATIO=0.2
 for Iter in {1..5}; do
     echo "Iteration: $Iter"
-    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --finetune 1 --finetune_ratio 0.2
+    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --finetune 1 --finetune_ratio $FINERATIO
     # eval ours (1st subtask)
-    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 --subtask1 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub1.txt
+    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 --subtask1 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_ratio_${FINERATIO}_fine_${Iter}_sub1.txt
     # train ours (2nd subtask)
-    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --second_stage --finetune 1 --finetune_ratio 0.2
+    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --second_stage --finetune 1 --finetune_ratio $FINERATIO
     # eval ours
-    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub2.txt
+    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_ratio_${FINERATIO}_fine_${Iter}_sub2.txt
 done
 
 

@@ -14,17 +14,18 @@ python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta
 
 cp ./model/inpainting_imagenet_2_agents_A2C_5/best.zip ./model/inpainting_imagenet_2_agents_A2C_5/best_orig.zip
 cp ./model/inpainting_imagenet_2_agents_A2C_5/best_2.zip ./model/inpainting_imagenet_2_agents_A2C_5/best_2_orig.zip
+
 # finetune
+FINERATIO=0.2
 for Iter in {1..5}; do
     echo "Iteration: $Iter"
-    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting --target_steps 5 --finetune 1 --finetune_ratio 0.2
+    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting --target_steps 5 --finetune 1 --finetune_ratio $FINERATIO
     # eval ours (1st subtask)
-    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting_eval --target_steps 5 --eval_model_name inpainting_imagenet_2_agents_A2C_5 --subtask1 >> model/inpainting_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub1.txt
+    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting_eval --target_steps 5 --eval_model_name inpainting_imagenet_2_agents_A2C_5 --subtask1 >> model/inpainting_imagenet_2_agents_A2C_5/2_agents_ratio_${FINERATIO}_fine_${Iter}_sub1.txt
     # # train ours (2nd subtask)
-    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting --target_steps 5 --second_stage --finetune 1 --finetune_ratio 0.2
+    python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting --target_steps 5 --second_stage --finetune 1 --finetune_ratio $FINERATIO
     # # eval ours
-    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting_eval --target_steps 5 --eval_model_name inpainting_imagenet_2_agents_A2C_5 >> model/inpainting_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub2.txt
-
+    python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting_eval --target_steps 5 --eval_model_name inpainting_imagenet_2_agents_A2C_5 >> model/inpainting_imagenet_2_agents_A2C_5/2_agents_ratio_${FINERATIO}_fine_${Iter}_sub2.txt
 done
 
 

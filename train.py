@@ -99,52 +99,52 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.ReLU()
         )
 
-    # def forward(self, observations: th.Tensor) -> th.Tensor:
-    #     img_features = self.cnn(observations['image'].float())
-    #     value_features = F.relu(self.fc(observations['value'].float()))
-        
-    #     if 'remain' in observations:
-    #         remain_features = F.relu(self.fc2(observations['remain'].float()))
-    #         value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
-
-    #     if self.use_scale_shift_norm:
-    #         emb_out = self.embedding_output(value_features)
-    #         scale, shift = th.chunk(emb_out, 2, dim=1)
-    #         h = self.out_norm(img_features) * (1 + scale) + shift
-    #         h = self.out_rest(h)
-    #     else:
-    #         h = self.out_rest(self.out_norm(img_features + value_features))
-
-    #     return h
     def forward(self, observations: th.Tensor) -> th.Tensor:
         img_features = self.cnn(observations['image'].float())
-        value_features = None
-
-        if 'value' in observations:
-            value_features = F.relu(self.fc(observations['value'].float()))
-
+        value_features = F.relu(self.fc(observations['value'].float()))
+        
         if 'remain' in observations:
             remain_features = F.relu(self.fc2(observations['remain'].float()))
-            if value_features is not None:
-                value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
-            else:
-                value_features = remain_features  
+            value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
 
         if self.use_scale_shift_norm:
-            if value_features is not None:
-                emb_out = self.embedding_output(value_features)
-                scale, shift = th.chunk(emb_out, 2, dim=1)
-                h = self.out_norm(img_features) * (1 + scale) + shift
-            else:
-                h = self.out_norm(img_features) 
+            emb_out = self.embedding_output(value_features)
+            scale, shift = th.chunk(emb_out, 2, dim=1)
+            h = self.out_norm(img_features) * (1 + scale) + shift
             h = self.out_rest(h)
         else:
-            if value_features is not None:
-                h = self.out_rest(self.out_norm(img_features + value_features))
-            else:
-                h = self.out_rest(self.out_norm(img_features))
+            h = self.out_rest(self.out_norm(img_features + value_features))
 
         return h
+    # def forward(self, observations: th.Tensor) -> th.Tensor:
+    #     img_features = self.cnn(observations['image'].float())
+    #     value_features = None
+
+    #     if 'value' in observations:
+    #         value_features = F.relu(self.fc(observations['value'].float()))
+
+    #     if 'remain' in observations:
+    #         remain_features = F.relu(self.fc2(observations['remain'].float()))
+    #         if value_features is not None:
+    #             value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
+    #         else:
+    #             value_features = remain_features  
+
+    #     if self.use_scale_shift_norm:
+    #         if value_features is not None:
+    #             emb_out = self.embedding_output(value_features)
+    #             scale, shift = th.chunk(emb_out, 2, dim=1)
+    #             h = self.out_norm(img_features) * (1 + scale) + shift
+    #         else:
+    #             h = self.out_norm(img_features) 
+    #         h = self.out_rest(h)
+    #     else:
+    #         if value_features is not None:
+    #             h = self.out_rest(self.out_norm(img_features + value_features))
+    #         else:
+    #             h = self.out_rest(self.out_norm(img_features))
+
+    #     return h
 
 
 def eval(env, model, eval_episode_num, num_steps):
