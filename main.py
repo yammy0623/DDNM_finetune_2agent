@@ -125,7 +125,6 @@ def parse_args_and_config():
         help="finetune ratio"
     )
     parser.add_argument("--input_root", type=str, default="/tmp2/ICML2025", help="The root folder of input images")
-    
 
 
     args = parser.parse_args()

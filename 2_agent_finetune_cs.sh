@@ -1,15 +1,18 @@
 EXP="/tmp2/ICML2025/ddnm_finetune"
 IMAGE_FOLDER="/tmp2/ICML2025/ddnm_finetune/imagenet"
 
+SEED=232
+
+mkdir -p model/cs_walshhadamard_imagenet_2_agents_A2C_5
 # CP
 # train ours (1st subtask)
 export CUDA_VISIBLE_DEVICES=1
 # train ours (1st subtask)
-python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "cs_walshhadamard" --deg_scale 0.25 --sigma_y 0. -i imagenet_cs_wh_025 --target_steps 5
+python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "cs_walshhadamard" --deg_scale 0.25 --sigma_y 0. -i imagenet_cs_wh_025 --target_steps 5 --seed $SEED
 # eval ours (1st subtask)
 python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "cs_walshhadamard" --deg_scale 0.25 --sigma_y 0. -i imagenet_cs_wh_025_eval --target_steps 5 --eval_model_name cs_walshhadamard_imagenet_2_agents_A2C_5 --subtask1 >> model/cs_walshhadamard_imagenet_2_agents_A2C_5/subtask1.txt
 # train ours (2nd subtask)
-python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "cs_walshhadamard" --deg_scale 0.25 --sigma_y 0. -i imagenet_cs_wh_025 --target_steps 5 --second_stage
+python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "cs_walshhadamard" --deg_scale 0.25 --sigma_y 0. -i imagenet_cs_wh_025 --target_steps 5 --second_stage --seed $SEED
 # eval ours
 python eval.py --ni --config imagenet_256.yml --exp $EXP -path_y imagenet --eta 0.85 --deg "cs_walshhadamard" --deg_scale 0.25 --sigma_y 0. -i imagenet_cs_wh_025_eval --target_steps 5 --eval_model_name cs_walshhadamard_imagenet_2_agents_A2C_5 >> model/cs_walshhadamard_imagenet_2_agents_A2C_5/2_agents.txt
 
