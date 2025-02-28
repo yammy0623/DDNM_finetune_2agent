@@ -475,3 +475,4 @@ class DiffusionEnv(gym.Env):
     def set_adjust(self, adjust):
         self.adjust = adjust
         print(f"Set adjust to {adjust}")
+
