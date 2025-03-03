@@ -12,7 +12,7 @@ from datasets import get_dataset, data_transform, inverse_data_transform
 from skimage.metrics import structural_similarity
 
 class EvalDiffusionEnv(gym.Env):
-    def __init__(self, target_steps=10, max_steps=100, threshold=0.8, DM=None, agent1=None, discrete_space=100):
+    def __init__(self, target_steps=10, max_steps=100, threshold=0.8, DM=None, agent1=None, discrete_space=100, seed=232):
         super(EvalDiffusionEnv, self).__init__()
         self.DM = DM
         self.agent1 = agent1
@@ -45,7 +45,7 @@ class EvalDiffusionEnv(gym.Env):
                 "remain": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
         # Initialize the random seed
-        self.seed(232)
+        self.seed(seed)
         self.data_idx = 0
         self.reset()
         self.isSavefig = False

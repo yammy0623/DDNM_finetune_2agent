@@ -12,9 +12,12 @@ from datasets import get_dataset, data_transform, inverse_data_transform
 from skimage.metrics import structural_similarity
 import gc
 from tqdm import tqdm
+from stable_baselines3.common.callbacks import BaseCallback
+
+
 
 class DiffusionEnv(gym.Env):
-    def __init__(self, target_steps=10, max_steps=100, threshold=0.8, DM=None, agent1=None, agent2=None):
+    def __init__(self, target_steps=10, max_steps=100, threshold=0.8, DM=None, agent1=None, agent2=None, seed=232):
         super(DiffusionEnv, self).__init__()
         self.DM = DM
         self.agent1 = agent1
@@ -44,45 +47,14 @@ class DiffusionEnv(gym.Env):
             self.action_space = spaces.Discrete(100) # Discrete action space
             # self.action_space = gym.spaces.Box(low=0, high=1) # Continuous action space
             self.observation_space = Dict({
-                "image": Box(low=0, high=1, shape=(3, self.sample_size, self.sample_size), dtype=np.float32),
+                "image": Box(low=-1, high=1, shape=(3, self.sample_size, self.sample_size), dtype=np.float32),
                 # "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
 
         # Initialize the random seed
-        self.seed(232)
+        self.seed(seed)
         self.reset()
         # print("Training data size:", len(self.DM.dataset))
-        ### Generate target PSNR and SSIM
-        '''total_ddnm_psnr = [[] for _ in range(len(self.DM.dataset))]
-        total_ddnm_ssim = [[] for _ in range(len(self.DM.dataset))]
-        for j in tqdm(range(len(self.DM.dataset))):
-            self.x_orig, self.classes = self.DM.dataset[j]
-            self.x, self.y, self.Apy, self.x_orig, self.A_inv_y = self.DM.preprocess(self.x_orig, self.data_idx)
-            ddim_x = self.x.clone()
-            ddim_x0_t = self.A_inv_y.clone()
-            entire_uniform_steps = [i for i in range(0, 999, 1000//100)][::-1]
-            with torch.no_grad():
-                for i in range(100):
-                    ddim_t = torch.tensor(entire_uniform_steps[i])
-                    if i != 0:
-                        ddim_x = self.DM.get_noisy_x(ddim_t, ddim_x0_t, self.ddim_et)
-                    ddim_x0_t, _,  self.ddim_et = self.DM.single_step_ddnm(ddim_x, self.y, ddim_t, self.classes)
-            orig = inverse_data_transform(self.DM.config, self.x_orig[0]).to(self.DM.device)
-            ddim_x = inverse_data_transform(self.DM.config, ddim_x0_t[0]).to(self.DM.device)
-            ddim_mse = torch.mean((ddim_x - orig) ** 2)
-            ddnm_psnr = 10 * torch.log10(1 / ddim_mse).item()
-            ddnm_ssim = structural_similarity(ddim_x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
-            total_ddnm_psnr[j] = ddnm_psnr
-            total_ddnm_ssim[j] = ddnm_ssim
-            # total_ddnm_psnr.append(ddnm_psnr)
-            # total_ddnm_ssim.append(ddnm_ssim)
-        np.save('exp/total_ddnm_psnr.npy', np.array(total_ddnm_psnr))
-        np.save('exp/total_ddnm_ssim.npy', np.array(total_ddnm_ssim))
-        a = np.load('exp/total_ddnm_psnr.npy')
-        b = np.load('exp/total_ddnm_ssim.npy')
-        print('a:', a)
-        print('b:', b)
-        exit()'''
         
     def seed(self, seed=None):
         np.random.seed(seed)

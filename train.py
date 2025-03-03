@@ -13,8 +13,12 @@ from gymnasium.envs.registration import register
 import torch.nn.functional as F
 import os
 import gc
+import numpy as np
 from main import parse_args_and_config
 from guided_diffusion.my_diffusion import Diffusion as my_diffusion
+from stable_baselines3.common.callbacks import BaseCallback
+
+WANDB_CALLBACK = True
 
 th.set_printoptions(sci_mode=False)
 
@@ -28,6 +32,34 @@ register(
     entry_point='envs:BaselineDiffusionEnv',
 )
 
+class RewardAccumulatorCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super(RewardAccumulatorCallback, self).__init__(verbose)
+        self.episode_rewards = []  # List to store sum of rewards for each episode
+        self.current_episode_reward = 0  # Accumulator for the current episode's rewards
+        self.all_epoch_averages = []  # Store the average rewards per epoch
+
+    def _on_step(self) -> bool:
+        # Accumulate rewards from each step
+        self.current_episode_reward += self.locals['rewards'][0]
+
+        # If the episode is done, append the sum to the episode_rewards list and reset
+        if self.locals['dones'][0]:
+            self.episode_rewards.append(self.current_episode_reward)
+            self.current_episode_reward = 0  # Reset for the next episode
+
+        return True
+
+    def _on_rollout_end(self):
+        # At the end of each rollout (which can contain multiple episodes), calculate average
+        if len(self.episode_rewards) > 0:
+            epoch_average = np.mean(self.episode_rewards)
+            self.all_epoch_averages.append(epoch_average)
+            print(f"Average Reward for Epoch: {epoch_average}")
+            wandb.log({"average_reward": epoch_average})
+            # Reset for the next epoch
+            self.episode_rewards = []
+
 def make_env(my_config):
     def _init():
         config = {
@@ -35,6 +67,7 @@ def make_env(my_config):
             "max_steps": my_config["max_steps"],
             "threshold": my_config["threshold"],
             "DM": my_config["DM"],
+            "seed": my_config["seed"],
         }
         if my_config["agent2"] is not None:
             config["agent2"] = my_config["agent2"]
@@ -55,12 +88,11 @@ class CustomCNN(BaseFeaturesExtractor):
         This corresponds to the number of unit for the last layer.
     """
 
-    def __init__(self, observation_space: spaces.Box, features_dim: int = 256, use_scale_shift_norm: bool = True):
+    def __init__(self, observation_space: spaces.Box, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
         # We assume CxHxW images (channels first)
         # Re-ordering will be done by pre-preprocessing or wrapper
         n_input_channels = observation_space['image'].shape[0]
-        self.use_scale_shift_norm = use_scale_shift_norm
         self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 32, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(32),  # Normalize features
@@ -98,54 +130,31 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.Linear(features_dim, features_dim),  # Further processing layer
             nn.ReLU()
         )
-
-    # def forward(self, observations: th.Tensor) -> th.Tensor:
-    #     img_features = self.cnn(observations['image'].float())
-    #     value_features = F.relu(self.fc(observations['value'].float()))
+        # For subtask 1
+        self.l_scale = nn.Parameter(th.ones(features_dim))  # Learnable scale parameter
+        self.l_shift = nn.Parameter(th.zeros(features_dim))  # Learnable shift parameter
         
-    #     if 'remain' in observations:
-    #         remain_features = F.relu(self.fc2(observations['remain'].float()))
-    #         value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
 
-    #     if self.use_scale_shift_norm:
-    #         emb_out = self.embedding_output(value_features)
-    #         scale, shift = th.chunk(emb_out, 2, dim=1)
-    #         h = self.out_norm(img_features) * (1 + scale) + shift
-    #         h = self.out_rest(h)
-    #     else:
-    #         h = self.out_rest(self.out_norm(img_features + value_features))
-
-    #     return h
     def forward(self, observations: th.Tensor) -> th.Tensor:
         img_features = self.cnn(observations['image'].float())
-        value_features = None
-
         if 'value' in observations:
             value_features = F.relu(self.fc(observations['value'].float()))
-
+        
         if 'remain' in observations:
             remain_features = F.relu(self.fc2(observations['remain'].float()))
-            if value_features is not None:
-                value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
-            else:
-                value_features = remain_features  
+            value_features = self.fc_merge(th.cat([value_features, remain_features], dim=1))
 
-        if self.use_scale_shift_norm:
-            if value_features is not None:
-                emb_out = self.embedding_output(value_features)
-                scale, shift = th.chunk(emb_out, 2, dim=1)
-                h = self.out_norm(img_features) * (1 + scale) + shift
-            else:
-                h = self.out_norm(img_features) 
+        if 'value' in observations:
+            emb_out = self.embedding_output(value_features)
+            scale, shift = th.chunk(emb_out, 2, dim=1)
+            h = self.out_norm(img_features) * (1 + scale) + shift
             h = self.out_rest(h)
         else:
-            if value_features is not None:
-                h = self.out_rest(self.out_norm(img_features + value_features))
-            else:
-                h = self.out_rest(self.out_norm(img_features))
+            h = self.out_norm(img_features) * (1 + self.l_scale) + self.l_shift
+            h = self.out_rest(h)
+            # h = self.out_rest(self.out_norm(img_features))
 
         return h
-
 
 def eval(env, model, eval_episode_num, num_steps):
     """Evaluate the model and return avg_score and avg_highest"""
@@ -205,20 +214,24 @@ def eval(env, model, eval_episode_num, num_steps):
     
     return avg_reward, avg_ssim, avg_psnr, pivot_ssim, pivot_psnr, ddim_ssim, ddim_psnr, ddnm_ssim, ddnm_psnr, info['time_step_sequence'], info['action_sequence'], info['threshold'], avg_reward_t, avg_t
 
-def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5):
+def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5, callback=None):
     """Train agent using SB3 algorithm and my_config"""
     current_best_psnr = 0
     current_best_ssim = 0
     print("total training epochs: ", int(epoch_num))
+
+    if WANDB_CALLBACK:
+        wandb_callback = WandbCallback(
+            gradient_save_freq=100,
+            verbose=2,
+        )
+
     for epoch in range(int(epoch_num)):
 
         model.learn(
             total_timesteps=config["timesteps_per_epoch"],
             reset_num_timesteps=False,
-            # callback=WandbCallback(
-            #     gradient_save_freq=100,
-            #     verbose=2,
-            # ),
+            callback=[callback, wandb_callback],
             progress_bar=True,
         )
 
@@ -261,6 +274,7 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5):
         print("DDNM_psnr:   ", ddnm_psnr)
         print("Time_step_sequence:", time_step_sequence)
         print("Action_sequence:", action_sequence)
+        print("training reward", callback.all_epoch_averages[-1])
         print()
         wandb.log(
             {
@@ -274,6 +288,7 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5):
                 "ddnm_ssim": ddnm_ssim,
                 "ddnm_psnr": ddnm_psnr,
                 "start_t": avg_t[0],
+                "train_reward": callback.all_epoch_averages[-1]
             }
         )
 
@@ -305,6 +320,7 @@ def main():
         "task": args.deg,
         "model_mode": "baseline" if args.baseline else "2_agents",
         "finetune": args.finetune,
+        "seed": args.seed,
 
     }
     
@@ -316,12 +332,14 @@ def main():
             my_config['run_id'] += '_S1'
 
     my_config['save_path'] = f'model/{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_A2C_{my_config["target_steps"]}'
-    run = wandb.init(
-        project="final",
-        config=my_config,
-        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-        id=my_config["run_id"],
-    )
+    
+    if WANDB_CALLBACK:
+        run = wandb.init(
+            project="try_sub1_"+args.path_y+"_"+args.deg,
+            config=my_config,
+            sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+            id=my_config["run_id"],
+        )
     
     config = {
             "target_steps": my_config["target_steps"],
@@ -329,6 +347,7 @@ def main():
             "threshold": my_config["threshold"],
             "DM": runner,
             "model_mode": my_config["model_mode"],
+            "seed": my_config["seed"],
         }
     if args.baseline == False:
         config["agent1"] = None
@@ -347,19 +366,23 @@ def main():
     # Create model from loaded config and train
     # Note: Set verbose to 0 if you don't want info messages
     
+    reward_accumulator = RewardAccumulatorCallback()
+
+
+    
+    ### First stage training
+    if args.baseline:
+        epoch_num = my_config['epoch_num'] 
+    else: 
+        epoch_num = my_config["first_stage_epoch_num"]
+
+    if args.finetune:
+        epoch_num = epoch_num * args.finetune_ratio
+        print("finetune: training with epoch_num = ", epoch_num)
+    else:
+        print("training with epoch_num = ", epoch_num)
+
     if not args.second_stage:
-        ### First stage training
-        if args.baseline:
-            epoch_num = my_config['epoch_num'] 
-        else: 
-            epoch_num = my_config["first_stage_epoch_num"]
-
-        if args.finetune:
-            epoch_num = epoch_num * args.finetune_ratio
-            print("finetune: training with epoch_num = ", epoch_num)
-        else:
-            print("training with epoch_num = ", epoch_num)
-
         ### First stage finetuning stage (need to load agent 2)
         if args.finetune:
             agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best_2")
@@ -382,17 +405,11 @@ def main():
         del config["model_mode"], config["agent2"]
         eval_env = gym.make('final-baseline', **config) if args.baseline else gym.make('final-ours', **config)
         
-        train(eval_env, model, my_config, epoch_num = epoch_num, num_steps = args.target_steps)
+        train(eval_env, model, my_config, epoch_num = epoch_num, num_steps = args.target_steps, callback=reward_accumulator)
         
     else:
         ### Second stage training
         epoch_num = my_config['epoch_num']
-        if args.finetune:
-            epoch_num = epoch_num * args.finetune_ratio
-            print("finetune: training with epoch_num = ", epoch_num)
-        else:
-            print("training with epoch_num = ", epoch_num)
-
         print("Loaded model from: ", f"{my_config['save_path']}/best")
         agent1 = my_config["algorithm"].load(f"{my_config['save_path']}/best")
         config['agent1'] = agent1
@@ -409,7 +426,7 @@ def main():
             learning_rate=my_config["learning_rate"],
             policy_kwargs=my_config["policy_kwargs"],
         )
-        train(eval_env, model2, my_config, epoch_num = epoch_num, second_stage=True, num_steps = args.target_steps)
+        train(eval_env, model2, my_config, epoch_num = epoch_num, second_stage=True, num_steps = args.target_steps, callback=reward_accumulator)
 
 if __name__ == '__main__':
     main()
