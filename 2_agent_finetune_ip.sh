@@ -10,9 +10,7 @@ python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --et
 # eval ours (1st subtask)
 python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting_eval --target_steps 5 --eval_model_name inpainting_imagenet_2_agents_A2C_5 --subtask1 >> model/inpainting_imagenet_2_agents_A2C_5/subtask1.txt
 # # train ours (2nd subtask)
-python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting --target_steps 5 --second_stage --seed $SEED
-# # eval ours
-python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting_eval --target_steps 5 --eval_model_name inpainting_imagenet_2_agents_A2C_5 >> model/inpainting_imagenet_2_agents_A2C_5/2_agents.txt
+# python train.py --ni --d-config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "inpainting" --sigma_y 0. -i imagenet_inpainting_eval --target_steps 5 --eval_model_name inpainting_imagenet_2_agents_A2C_5 >> model/inpainting_imagenet_2_agents_A2C_5/2_agents.txt
 
 # cp ./model/inpainting_imagenet_2_agents_A2C_5/best.zip ./model/inpainting_imagenet_2_agents_A2C_5/best_orig.zip
 # cp ./model/inpainting_imagenet_2_agents_A2C_5/best_2.zip ./model/inpainting_imagenet_2_agents_A2C_5/best_2_orig.zip

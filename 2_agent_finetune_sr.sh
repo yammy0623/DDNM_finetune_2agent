@@ -8,11 +8,11 @@ mkdir -p model/sr_bicubic_imagenet_2_agents_A2C_5
 export CUDA_VISIBLE_DEVICES=0
 python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --seed $SEED
 # eval ours (1st subtask)
-python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 --subtask1 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_sub1.txt
+python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 --subtask1 >> model/sr_bicubic_imagenet_2_agents_A2C_5/subtask1.txt
 # train ours (2nd subtask)
-python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --second_stage --seed $SEED
-# eval ours
-python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_sub2.txt
+# python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --second_stage --seed $SEED
+# # eval ours
+# python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_sub2.txt
 
 # cp ./model/sr_bicubic_imagenet_2_agents_A2C_5/best.zip ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_orig.zip
 # cp ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_2.zip ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_2_orig.zip
