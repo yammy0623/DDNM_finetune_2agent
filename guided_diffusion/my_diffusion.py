@@ -79,7 +79,7 @@ def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_time
 
 
 class Diffusion(object):
-    def __init__(self, args, config, device=None):
+    def __init__(self, args, config, training_data=None, device=None):
         self.args = args
         self.config = config
         if device is None:
@@ -185,7 +185,7 @@ class Diffusion(object):
                 def cond_fn(x, t, y):
                     with torch.enable_grad():
                         x_in = x.detach().requires_grad_(True)
-                        logits = classifier(x_in, t)
+                        logits = self.config.classifier(x_in, t)
                         log_probs = F.log_softmax(logits, dim=-1)
                         selected = log_probs[range(len(logits)), y.view(-1)]
                         return torch.autograd.grad(selected.sum(), x_in)[0] * self.config.classifier.classifier_scale
@@ -213,6 +213,10 @@ class Diffusion(object):
 
         _, self.dataset, self.test_dataset = get_dataset(args, config)
 
+        if training_data:
+            indices = random.sample(range(len(self.dataset)), training_data)
+            self.dataset = torch.utils.data.Subset(self.dataset, indices)
+
         device_count = torch.cuda.device_count()
 
         if args.subset_start >= 0 and args.subset_end > 0:
@@ -222,7 +226,8 @@ class Diffusion(object):
             args.subset_start = 0
             args.subset_end = len(self.test_dataset)
 
-        print(f'Dataset has size {len(self.test_dataset)}')
+        print(f'training Dataset has size {len(self.dataset)}')
+        print(f'testing Dataset has size {len(self.test_dataset)}')
 
         def seed_worker(worker_id):
             worker_seed = args.seed % 2 ** 32

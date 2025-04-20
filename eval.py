@@ -36,6 +36,7 @@ def make_env(my_config):
             "max_steps": my_config["max_steps"],
             "threshold": my_config["threshold"],
             "DM": my_config["DM"],
+            # "n_steps": my_config["n_steps"],
             # "agent1": my_config["agent1"],
         }
         if my_config["model_mode"] == "baseline":
@@ -79,13 +80,14 @@ def main():
         features_extractor_kwargs=dict(features_dim=256),
     )
     my_config = {
-        "algorithm": A2C,
+        "algorithm": PPO,
         "target_steps": args.target_steps,
         "threshold": 0.9,
         "policy_network": "MultiInputPolicy",
         "policy_kwargs": policy_kwargs,
         "max_steps": 100,
         "num_eval_envs": 1,
+        "n_steps": 1280,
         "eval_num": len(runner.test_dataset),
     }
     my_config['save_path'] = f'model/{args.eval_model_name}/best'
@@ -99,6 +101,7 @@ def main():
             "max_steps": my_config["max_steps"],
             "threshold": my_config["threshold"],
             "DM": runner,
+            # "n_steps": my_config["n_steps"],
             # "agent1": agent1,
             "model_mode": "baseline" if args.baseline else "2_agents",
         }

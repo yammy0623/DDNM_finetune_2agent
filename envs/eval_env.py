@@ -64,10 +64,10 @@ class EvalDiffusionEnv(gym.Env):
         self.action_sequence = []
         self.x_orig, self.classes = self.DM.test_dataset[self.data_idx]
 
-        if self.classes == 335:
-            self.isSavefig = True
-        else:
-            self.isSavefig = False
+        # if self.classes == 335:
+        #     self.isSavefig = True
+        # else:
+        #     self.isSavefig = False
 
         self.x, self.y, self.Apy, self.x_orig, self.A_inv_y = self.DM.preprocess(self.x_orig, self.data_idx)
         self.x0_t = self.A_inv_y.clone()
