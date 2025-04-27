@@ -175,6 +175,12 @@ def get_dataset(args, config):
             dataset = None
             train_dataset = ImageDataset(os.path.join(args.input_root, 'ImageNet', 'train'),
                      image_size=config.data.image_size,
+                     val_mode=False,
+                     normalize=False)
+            
+            val_dataset = ImageDataset(os.path.join(args.input_root, 'ImageNet', 'train'),
+                     image_size=config.data.image_size,
+                     val_mode=True,
                      normalize=False)
             
             # test_dataset = ImageDataset(os.path.join(args.input_root, 'ImageNet', 'val'),
@@ -185,6 +191,8 @@ def get_dataset(args, config):
                      os.path.join(args.input_root, 'imagenet_val_1k.txt'),
                      image_size=config.data.image_size,
                      normalize=False)
+            
+            return train_dataset, val_dataset, test_dataset
 
         elif config.data.out_of_dist:
             dataset = torchvision.datasets.ImageFolder(
@@ -203,7 +211,7 @@ def get_dataset(args, config):
     else:
         dataset, train_dataset, test_dataset = None, None, None
 
-    return dataset, train_dataset, test_dataset
+    return train_dataset, dataset, test_dataset
 
 
 def logit_transform(image, lam=1e-6):

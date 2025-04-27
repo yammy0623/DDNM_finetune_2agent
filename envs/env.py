@@ -53,6 +53,7 @@ class DiffusionEnv(gym.Env):
             })
 
         # Initialize the random seed
+        self.data_idx = 0
         self.seed(seed)
         self.reset()
         # print("Training data size:", len(self.DM.dataset))
@@ -63,14 +64,27 @@ class DiffusionEnv(gym.Env):
         torch.manual_seed(seed)
         torch.random.manual_seed(seed)
     
-    def reset(self, seed=None, options=None):
+    def reset(self, isValid=False, seed=None, options=None):
         if seed is not None:
             self.seed(seed)
         self.current_step_num = 0
         self.time_step_sequence = []
         self.action_sequence = []
-        self.data_idx = random.randint(0, len(self.DM.dataset)-1)
-        self.x_orig, self.classes = self.DM.dataset[self.data_idx]
+        self.isValid = isValid
+        self.shuffled_indices = []
+        
+
+        if self.isValid:
+            self.dataset = self.DM.val_dataset
+            if not self.shuffled_indices:
+                self.shuffled_indices = random.sample(range(len(self.dataset)), len(self.dataset))
+            self.data_idx = self.shuffled_indices.pop(0)
+
+        else:
+            self.dataset = self.DM.train_dataset
+            self.data_idx = random.randint(0, len(self.dataset)-1)
+
+        self.x_orig, self.classes = self.dataset[self.data_idx]
         self.x, self.y, self.Apy, self.x_orig, self.A_inv_y = self.DM.preprocess(self.x_orig, self.data_idx)
         ddim_x = self.x.clone()
         ddim_x0_t = self.A_inv_y.clone()
@@ -335,6 +349,8 @@ class DiffusionEnv(gym.Env):
 
         # Finish the episode if denoising is done
         done = (self.current_step_num == self.target_steps - 1) or not self.adjust
+
+            
         # Calculate reward
         reward, ssim, psnr, ddim_ssim, ddim_psnr, pivot_ssim, pivot_psnr = self.calculate_reward(done)
         # Save figure

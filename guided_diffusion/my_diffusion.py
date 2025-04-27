@@ -211,11 +211,12 @@ class Diffusion(object):
 
         args, config = self.args, self.config
 
-        _, self.dataset, self.test_dataset = get_dataset(args, config)
+        self.train_dataset, self.val_dataset, self.test_dataset = get_dataset(args, config)
 
+        # train data slice
         if training_data:
-            indices = random.sample(range(len(self.dataset)), training_data)
-            self.dataset = torch.utils.data.Subset(self.dataset, indices)
+            indices = random.sample(range(len(self.train_dataset)), training_data)
+            self.train_dataset = torch.utils.data.Subset(self.train_dataset, indices)
 
         device_count = torch.cuda.device_count()
 
@@ -226,7 +227,8 @@ class Diffusion(object):
             args.subset_start = 0
             args.subset_end = len(self.test_dataset)
 
-        print(f'training Dataset has size {len(self.dataset)}')
+        print(f'training Dataset has size {len(self.train_dataset)}')
+        print(f'validation Dataset has size {len(self.val_dataset)}')
         print(f'testing Dataset has size {len(self.test_dataset)}')
 
         def seed_worker(worker_id):
