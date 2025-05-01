@@ -4,7 +4,13 @@ SEED=232
 DEG="deblur_gauss"
 ALG="PPO"
 STEPS=5
-SAVEFOLDER=$DEG"_imagenet_2_agents_"$ALG"_"$STEPS"_moredata"
+MODE="2_agents"
+DATASET="imagenet"
+NUM_TRAIN_ENV="16"
+
+SAVEFOLDER=$DEG"_imagenet_2_agents_"$ALG"_"$STEPS"_s1_conti_hist"
+ID=$DEG"_"$DATASET"_"$MODE"_"$ALG"_env_"$NUM_TRAIN_ENV"_steps_"$STEPS"_s1_conti_hist"
+    
 
 # Deblur
 # train ours (1st subtask)
@@ -12,9 +18,9 @@ export CUDA_VISIBLE_DEVICES=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # train ours (1st subtask)
-python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --seed $SEED --save_path "./model/"$SAVEFOLDER
+python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --seed $SEED --save_path "./model/"$SAVEFOLDER --id $ID
 # eval ours (1st subtask)
-python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name "$DEG"_imagenet_2_agents_"$ALG"_"$STEPS" --save_path "./model/"$SAVEFOLDER --subtask1 >> model/"$SAVEFOLDER"/subtask1.txt
+python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name "$DEG"_imagenet_2_agents_"$ALG"_"$STEPS" --save_path "./model/"$SAVEFOLDER --subtask1 --id $ID >> model/"$SAVEFOLDER"/subtask1.txt
 # train ours (2nd subtask)
 # python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --second_stage --seed $SEED
 # eval ours

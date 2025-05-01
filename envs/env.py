@@ -14,6 +14,7 @@ import gc
 from tqdm import tqdm
 from stable_baselines3.common.callbacks import BaseCallback
 
+S1_CONTI=True
 
 
 class DiffusionEnv(gym.Env):
@@ -45,7 +46,10 @@ class DiffusionEnv(gym.Env):
                 "remain": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
         else: # Subtask 1
-            self.action_space = spaces.Discrete(100) # Discrete action space
+            if S1_CONTI:
+                self.action_space = gym.spaces.Box(low=0, high=1)
+            else:
+                self.action_space = spaces.Discrete(100) # Discrete action space
             # self.action_space = gym.spaces.Box(low=0, high=1) # Continuous action space
             self.observation_space = Dict({
                 "image": Box(low=-1, high=1, shape=(3, self.sample_size, self.sample_size), dtype=np.float32),
@@ -195,8 +199,11 @@ class DiffusionEnv(gym.Env):
             ### RL step
             if self.adjust == False: # First subtask
                 initial_t = torch.tensor(500)
-                start_t = 10 * (1+action) - 1 # Discrete action space
-                # start_t = 999 * (action)# + 1) / 2 # Continuous action space
+                if S1_CONTI:
+                     start_t = 999 * (action)# + 1) / 2 # Continuous action space
+                else:
+                    start_t = 10 * (1+action) - 1 # Discrete action space
+               
                 t = torch.tensor(int(max(0, min(start_t, 999))))
                 # print('t:', t)
                 # self.old_interval = initial_t // (self.target_steps - 1)

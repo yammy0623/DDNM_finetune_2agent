@@ -32,6 +32,8 @@ register(
     entry_point='envs:BaselineDiffusionEnv',
 )
 
+
+
 class RewardAccumulatorCallback(BaseCallback):
     def __init__(self, verbose=0):
         super(RewardAccumulatorCallback, self).__init__(verbose)
@@ -85,6 +87,21 @@ def make_env(my_config, seed=None):
             return gym.make('final-ours', **config)
     return _init
 
+
+def log_custom_histogram(data, name, bin_width=None, num_bins=None):
+    data = np.array(data)
+    if bin_width is not None:
+        bins = np.arange(data.min(), data.max() + bin_width, bin_width)
+    elif num_bins is not None:
+        bins = num_bins
+    else:
+        bins = 'auto'
+
+    hist, bin_edges = np.histogram(data, bins=bins)
+
+    wandb.log({name: wandb.Histogram(np_histogram=(hist, bin_edges))})
+
+    
 class CustomCNN(BaseFeaturesExtractor):
     """
     :param observation_space: (gym.Space)
@@ -160,6 +177,27 @@ class CustomCNN(BaseFeaturesExtractor):
 
         return h
 
+
+class CustomWandbCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super(CustomWandbCallback, self).__init__(verbose)
+        self.start_T = []
+
+    def _on_step(self) -> bool:
+        infos = self.locals.get("infos", None)
+        if infos is not None:
+            # print("get infos")
+            for info in infos:
+                if "t" in info:
+                    self.start_T.append(info["t"].item())
+        return True
+    def _on_rollout_end(self):
+        print("rollout_end")
+        # print("start T", self.start_T)
+        log_custom_histogram(self.start_T, "train_start_t", num_bins=500)
+        self.start_T = []
+    
+
 def eval(env, model, eval_episode_num, num_steps):
     print("============ eval START ===============")
     """Evaluate the model and return avg_score and avg_highest"""
@@ -175,6 +213,8 @@ def eval(env, model, eval_episode_num, num_steps):
     ddnm_ssim = 0
     ddnm_psnr = 0
     avg_start_t = 0
+    start_t = []
+
     with th.no_grad():
         for seed in range(eval_episode_num):
             done = False
@@ -189,6 +229,9 @@ def eval(env, model, eval_episode_num, num_steps):
                 obs, reward, done, _, info = env.step(action)
                 avg_reward_t[now_t] += info['reward']
                 now_t += 1
+                start_t.append(info['time_step_sequence'][0])
+ 
+            # wandb.log({"val_histogram": wandb.Histogram(start_t)})
             
             avg_reward += info['reward']
             avg_ssim   += info['ssim']
@@ -216,6 +259,10 @@ def eval(env, model, eval_episode_num, num_steps):
     for i in range(num_steps):
         avg_reward_t[i] = (avg_reward_t[i] / eval_episode_num) # 每一個步數獲得的reward
         avg_t[i] = avg_t[i] / eval_episode_num
+    
+    print("val start t: ", start_t)
+    log_custom_histogram(start_t, "val_histogram", num_bins=500)
+            
     print("============ eval DONE ===============")
     return avg_reward, avg_ssim, avg_psnr, pivot_ssim, pivot_psnr, ddim_ssim, ddim_psnr, ddnm_ssim, ddnm_psnr, info['time_step_sequence'], info['action_sequence'], info['threshold'], avg_reward_t, avg_t
 
@@ -230,13 +277,16 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5, c
             gradient_save_freq=100,
             verbose=2,
         )
+    
+    start_t_callback = CustomWandbCallback()
+    callback_list = [callback, wandb_callback, start_t_callback]
 
     for epoch in range(int(epoch_num)):
 
         model.learn(
             total_timesteps=config["timesteps_per_epoch"],
             reset_num_timesteps=False,
-            callback=[callback, wandb_callback],
+            callback=callback_list,
             progress_bar=True,
         )
 
@@ -281,6 +331,14 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5, c
         print("Action_sequence:", action_sequence)
         print("training reward", [] if not callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1])
         print()
+        gpu_index=0
+        total = th.cuda.get_device_properties(gpu_index).total_memory
+        used = th.cuda.memory_allocated(gpu_index)
+
+        used_MB = used / 1024**2
+        total_MB = total / 1024**2
+        percent = used / total * 100
+        print(f"GPU Memory Usage: {used_MB:.2f} MB / {total_MB:.2f} MB ({percent:.2f}%)")
         wandb.log(
             {
                 "avg_reward": avg_reward,
@@ -294,21 +352,12 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5, c
                 # "ddnm_psnr": ddnm_psnr,
 
                 "start_t": avg_t[0],
-                "train_reward": [] if not callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1]
+                "train_reward": [] if not callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1],
+                "gpu_process_memory_MB": used_MB,
+                "gpu_process_memory_percent": percent,
             }
         )
-        gpu_index=0
-        total = th.cuda.get_device_properties(gpu_index).total_memory
-        used = th.cuda.memory_allocated(gpu_index)
-
-        used_MB = used / 1024**2
-        total_MB = total / 1024**2
-        percent = used / total * 100
-
-        wandb.log({
-            "system/gpu_process_memory_MB": used_MB,
-            "system/gpu_process_memory_percent": percent,
-        })
+        
 
 def log_gpu_memory(step=None, gpu_index=0):
     total = th.cuda.get_device_properties(gpu_index).total_memory
@@ -339,7 +388,7 @@ def main():
         # "algorithm": PPO if alg == "PPO" else A2C,
         "target_steps": args.target_steps,
         "threshold": 0.9,
-        "num_train_envs": 32,
+        "num_train_envs": 16,
         "n_steps": 640,
         "n_epochs": 1,
         "policy_network": "MultiInputPolicy",
@@ -358,7 +407,9 @@ def main():
         # "training_data": training_data
     }
     my_config['timesteps_per_epoch'] = my_config['num_train_envs'] * my_config['n_steps'] * my_config['iteration']
-    my_config['run_id'] = f'{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_{my_config["alg"]}_env_{my_config["num_train_envs"]}_steps_{my_config["target_steps"]}_moredata'
+    # my_config['run_id'] = f'{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_{my_config["alg"]}_env_{my_config["num_train_envs"]}_steps_{my_config["target_steps"]}_histogram'
+    my_config['run_id'] = args.id
+    print("Run ID: ", my_config['run_id'])
     if args.baseline == False:
         my_config['run_id'] += '_S2' if args.second_stage else '_S1'
 
@@ -380,6 +431,7 @@ def main():
             config=my_config,
             sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
             id=my_config["run_id"],
+            resume=False
         )
     
 
@@ -464,3 +516,7 @@ if __name__ == '__main__':
     print("Before setting:", th.cuda.memory_reserved())
     # th.cuda.set_per_process_memory_fraction(0., device=0)
     main()
+
+
+
+
