@@ -335,7 +335,7 @@ def main():
     
     if WANDB_CALLBACK:
         run = wandb.init(
-            project="try_sub1_"+args.path_y+"_"+args.deg,
+            project="only_lpips_sub1_"+args.path_y+"_"+args.deg,
             config=my_config,
             sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
             id=my_config["run_id"],

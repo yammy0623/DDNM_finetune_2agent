@@ -13,7 +13,7 @@ from skimage.metrics import structural_similarity
 import gc
 from tqdm import tqdm
 from stable_baselines3.common.callbacks import BaseCallback
-
+import lpips
 
 
 class DiffusionEnv(gym.Env):
@@ -55,7 +55,8 @@ class DiffusionEnv(gym.Env):
         self.seed(seed)
         self.reset()
         # print("Training data size:", len(self.DM.dataset))
-        
+        self.lpips_loss = lpips.LPIPS(net='alex').to(self.DM.device)
+
     def seed(self, seed=None):
         np.random.seed(seed)
         random.seed(seed)
@@ -379,6 +380,10 @@ class DiffusionEnv(gym.Env):
         return ssim, psnr
 
     def calculate_reward(self, done):
+        SSIM = False
+        PSNR = False
+        LPIPS = True
+
         reward = 0
         orig = inverse_data_transform(self.DM.config, self.x_orig[0]).to(self.DM.device)
         if done and self.adjust: # Second subtask done
@@ -393,49 +398,35 @@ class DiffusionEnv(gym.Env):
         # pivot_ssim, pivot_psnr = self.get_ssim_psnr(pivot_x, orig)
 
 
-        # reward += 0.5 * (psnr - pivot_psnr) / (27.46 - 26.82)
-        # reward += 0.5 * (ssim - pivot_ssim) / (0.01)
-        if self.adjust == False: # First subtask
+        # 計算 LPIPS
+        lpips_score = self.lpips_loss(x, orig).item()  # LPIPS 越小代表越相似
+
+        # 記錄 pivot 值
+        if self.adjust == False:  # First subtask
             self.pivot_ssim = self.ddim_ssim
             self.pivot_psnr = self.ddim_psnr
-            
-        if ssim > self.pivot_ssim:
-            reward += ssim / self.pivot_ssim
-        else:
-            reward -= self.pivot_ssim / ssim
-        if psnr > self.pivot_psnr:
-            reward += psnr / self.pivot_psnr
-        else:
-            reward -= self.pivot_psnr / psnr
+            self.pivot_lpips = lpips_score
+
+        if SSIM:
+            if ssim > self.pivot_ssim:
+                reward += ssim / self.pivot_ssim
+            else:
+                reward -= self.pivot_ssim / ssim
+        if PSNR:
+            if psnr > self.pivot_psnr:
+                reward += psnr / self.pivot_psnr
+            else:
+                reward -= self.pivot_psnr / psnr
+
+        if LPIPS:
+            if lpips_score < self.pivot_lpips:
+                reward += self.pivot_lpips / lpips_score
+            else:
+                reward -= lpips_score / self.pivot_lpips
 
         if not done:
             reward /= self.target_steps
 
-        # Intermediate reward
-        '''if not done:# and psnr > self.ddim_psnr and ssim > self.ddim_ssim:
-            if self.ddnm_psnr > pivot_psnr:
-                reward += 0.5/self.target_steps * (psnr - pivot_psnr) / (self.ddnm_psnr - pivot_psnr)
-            else:
-                reward += 0.5/self.target_steps * psnr / pivot_psnr
-            if self.ddnm_ssim > pivot_ssim:
-                reward += 0.5/self.target_steps * (ssim - pivot_ssim) / (self.ddnm_ssim - pivot_ssim)
-            else:    
-                reward += 0.5/self.target_steps * ssim / pivot_ssim
-            # reward += 0.5/self.target_steps * (psnr / self.ddim_psnr)  
-            # reward += 0.5/self.target_steps * (ssim / self.ddim_ssim)  
-            
-        # Sparse reward
-        if done:# and psnr > self.ddim_psnr and ssim > self.ddim_ssim:
-            if self.ddnm_psnr > pivot_psnr:
-                reward += 0.5 * (psnr - pivot_psnr) / (self.ddnm_psnr - pivot_psnr)
-            else:
-                reward += 0.5 * psnr / pivot_psnr
-            if self.ddnm_ssim > pivot_ssim:
-                reward += 0.5 * (ssim - pivot_ssim) / (self.ddnm_ssim - pivot_ssim)
-            else:    
-                reward += 0.5 * ssim / pivot_ssim
-            # reward += 0.5 * (psnr / self.ddim_psnr)
-            # reward += 0.5 * (ssim / self.ddim_ssim)'''
 
         # print('ssim:', ssim, 'psnr:', psnr, 'pivot_ssim:', pivot_ssim, 'pivot_psnr:', pivot_psnr, 'ddnm_ssim:', self.ddnm_ssim, 'ddnm_psnr:', self.ddnm_psnr, 'reward:', reward)
         return reward, ssim, psnr, self.ddim_ssim, self.ddim_psnr, self.pivot_ssim, self.pivot_psnr
