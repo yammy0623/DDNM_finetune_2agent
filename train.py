@@ -37,7 +37,7 @@ class RewardAccumulatorCallback(BaseCallback):
         super(RewardAccumulatorCallback, self).__init__(verbose)
         self.episode_rewards = []  # List to store sum of rewards for each episode
         self.current_episode_reward = 0  # Accumulator for the current episode's rewards
-        self.all_epoch_averages = []  # Store the average rewards per epoch
+        self.all_epoch_averages = [0]  # Store the average rewards per epoch
 
     def _on_step(self) -> bool:
         # Accumulate rewards from each step
@@ -68,6 +68,7 @@ def make_env(my_config):
             "threshold": my_config["threshold"],
             "DM": my_config["DM"],
             "seed": my_config["seed"],
+            # "n_steps":my_config["n_steps"],
         }
         if my_config["agent2"] is not None:
             config["agent2"] = my_config["agent2"]
@@ -198,7 +199,7 @@ def eval(env, model, eval_episode_num, num_steps):
             for i in range(num_steps):
                 avg_t[i] += info['time_step_sequence'][i]
 
-    avg_reward /= eval_episode_num
+    avg_reward /= eval_episode_num # 跑到最後一步獲得的reward
     avg_ssim /= eval_episode_num
     avg_psnr /= eval_episode_num
     pivot_ssim /= eval_episode_num
@@ -209,7 +210,7 @@ def eval(env, model, eval_episode_num, num_steps):
     ddnm_psnr /= eval_episode_num
     avg_start_t /= eval_episode_num
     for i in range(num_steps):
-        avg_reward_t[i] = (avg_reward_t[i] / eval_episode_num)
+        avg_reward_t[i] = (avg_reward_t[i] / eval_episode_num) # 每一個步數獲得的reward
         avg_t[i] = avg_t[i] / eval_episode_num
     
     return avg_reward, avg_ssim, avg_psnr, pivot_ssim, pivot_psnr, ddim_ssim, ddim_psnr, ddnm_ssim, ddnm_psnr, info['time_step_sequence'], info['action_sequence'], info['threshold'], avg_reward_t, avg_t
@@ -274,7 +275,7 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5, c
         print("DDNM_psnr:   ", ddnm_psnr)
         print("Time_step_sequence:", time_step_sequence)
         print("Action_sequence:", action_sequence)
-        print("training reward", callback.all_epoch_averages[-1])
+        print("training reward", [] if not callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1])
         print()
         wandb.log(
             {
@@ -288,7 +289,7 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5, c
                 "ddnm_ssim": ddnm_ssim,
                 "ddnm_psnr": ddnm_psnr,
                 "start_t": avg_t[0],
-                "train_reward": callback.all_epoch_averages[-1]
+                "train_reward": [] if not callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1]
             }
         )
 
@@ -296,46 +297,48 @@ def train(eval_env, model, config, epoch_num, second_stage=False, num_steps=5, c
 def main():
     # Initialze DDNM
     args, config = parse_args_and_config()
-    runner = my_diffusion(args, config)
+    training_data = 256
+    runner = my_diffusion(args, config, training_data)
 
     policy_kwargs = dict(
         features_extractor_class=CustomCNN,
         features_extractor_kwargs=dict(features_dim=256),
     )
+    alg = "PPO"
     my_config = {
-        "algorithm": A2C,
+        "algorithm": PPO if alg == "PPO" else A2C,
         "target_steps": args.target_steps,
         "threshold": 0.9,
-        "num_train_envs": 16,
-
+        "num_train_envs": 8,
+        "n_steps": 1280,
         "epoch_num": 200,
         "first_stage_epoch_num": 50,
         "policy_network": "MultiInputPolicy",
         "timesteps_per_epoch": 100,
-        "eval_episode_num": 16,
+        "eval_episode_num": 8,
         "learning_rate": 1e-4, 
         "policy_kwargs": policy_kwargs,
-
         "max_steps": 100,
         "task": args.deg,
         "model_mode": "baseline" if args.baseline else "2_agents",
         "finetune": args.finetune,
         "seed": args.seed,
+        "training_data": training_data
 
     }
     
-    my_config['run_id'] = f'{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_A2C_env_{my_config["num_train_envs"]}_steps_{my_config["target_steps"]}'
+    my_config['run_id'] = f'{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_{alg}_env_{my_config["num_train_envs"]}_steps_{my_config["target_steps"]}_ppo'
     if args.baseline == False:
         if args.second_stage:
             my_config['run_id'] += '_S2'
         else:
             my_config['run_id'] += '_S1'
 
-    my_config['save_path'] = f'model/{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_A2C_{my_config["target_steps"]}'
+    my_config['save_path'] = f'model/{my_config["task"]}_{args.path_y}_{my_config["model_mode"]}_{alg}_{my_config["target_steps"]}'
     
     if WANDB_CALLBACK:
         run = wandb.init(
-            project="try_sub1_"+args.path_y+"_"+args.deg,
+            project="exp_"+args.path_y+"_"+args.deg+str(args.target_steps),
             config=my_config,
             sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
             id=my_config["run_id"],
@@ -348,6 +351,7 @@ def main():
             "DM": runner,
             "model_mode": my_config["model_mode"],
             "seed": my_config["seed"],
+            # "n_steps":my_config["n_steps"],
         }
     if args.baseline == False:
         config["agent1"] = None
@@ -396,7 +400,8 @@ def main():
 
         model = my_config["algorithm"](
                 my_config["policy_network"], 
-                train_env, 
+                train_env,
+                n_steps=my_config["n_steps"], 
                 verbose=2,
                 tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
                 learning_rate=my_config["learning_rate"],
@@ -422,6 +427,7 @@ def main():
             my_config["policy_network"], 
             train_env, 
             verbose=2,
+            n_steps=my_config["n_steps"],
             tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
             learning_rate=my_config["learning_rate"],
             policy_kwargs=my_config["policy_kwargs"],
@@ -429,4 +435,6 @@ def main():
         train(eval_env, model2, my_config, epoch_num = epoch_num, second_stage=True, num_steps = args.target_steps, callback=reward_accumulator)
 
 if __name__ == '__main__':
+    print("Before setting:", th.cuda.memory_reserved())
+    # th.cuda.set_per_process_memory_fraction(0., device=0)
     main()

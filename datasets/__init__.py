@@ -112,7 +112,7 @@ def get_dataset(args, config):
     elif config.data.dataset == "LSUN":
         if config.data.out_of_dist:
             dataset = torchvision.datasets.ImageFolder(
-                os.path.join(args.exp, 'datasets', "ood_{}".format(config.data.category)),
+                os.path.join(args.input_root, "ood_{}".format(config.data.category)),
                 transform=transforms.Compose([partial(center_crop_arr, image_size=config.data.image_size),
                 transforms.ToTensor()])
             )
@@ -121,7 +121,7 @@ def get_dataset(args, config):
             train_folder = "{}_train".format(config.data.category)
             val_folder = "{}_val".format(config.data.category)
             test_dataset = LSUN(
-                root=os.path.join(args.exp, "datasets", "lsun"),
+                root=os.path.join(args.input_root, "lsun"),
                 classes=[val_folder],
                 transform=transforms.Compose(
                     [
@@ -132,6 +132,7 @@ def get_dataset(args, config):
                 )
             )
             dataset = test_dataset
+        train_dataset = dataset
     
     elif config.data.dataset == "CelebA_HQ" or config.data.dataset == 'FFHQ':
         if config.data.out_of_dist:

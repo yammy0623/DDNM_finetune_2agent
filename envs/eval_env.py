@@ -48,6 +48,7 @@ class EvalDiffusionEnv(gym.Env):
         self.seed(seed)
         self.data_idx = 0
         self.reset()
+        self.isSavefig = False
         
     def seed(self, seed=None):
         np.random.seed(seed)
@@ -62,6 +63,12 @@ class EvalDiffusionEnv(gym.Env):
         self.time_step_sequence = []
         self.action_sequence = []
         self.x_orig, self.classes = self.DM.test_dataset[self.data_idx]
+
+        # if self.classes == 335:
+        #     self.isSavefig = True
+        # else:
+        #     self.isSavefig = False
+
         self.x, self.y, self.Apy, self.x_orig, self.A_inv_y = self.DM.preprocess(self.x_orig, self.data_idx)
         self.x0_t = self.A_inv_y.clone()
 
@@ -130,6 +137,11 @@ class EvalDiffusionEnv(gym.Env):
                 self.interval = int(t / (self.target_steps - self.current_step_num - 1)) if (self.target_steps - self.current_step_num - 1) != 0 else self.interval
                 # self.x = self.DM.get_noisy_x(t, self.x0_t, self.et)
                 self.x = self.DM.get_noisy_x(t, self.x0_t, self.et) if self.current_step_num != 0 else self.DM.get_noisy_x(t, self.x0_t, initial=True)
+                if self.isSavefig:
+                    savefig(self.DM.config, self.x, f"./images/x_{self.current_step_num}.jpg")
+                    
+                    
+                
                 self.previous_t = t
                 self.x0_t, _,  self.et = self.DM.single_step_ddnm(self.x, self.y, t, self.classes)
                 self.time_step_sequence.append(t.item())
@@ -186,3 +198,8 @@ class EvalDiffusionEnv(gym.Env):
     def render(self, mode='human', close=False):
         # This could visualize the current state if necessary
         pass
+
+from torchvision import utils as tvu
+def savefig(config, x, name):
+    x = inverse_data_transform(config, x).to("cpu")
+    tvu.save_image(x.to('cpu'), name)

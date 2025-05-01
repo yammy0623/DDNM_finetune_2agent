@@ -29,6 +29,7 @@ class DiffusionEnv(gym.Env):
         # adjust: False -> First subtask, True -> Second subtask
         self.adjust = True if agent1 is not None else False
         
+        
         self.sample_size = 256
         # Maximum number of steps  (Baseline)
         self.max_steps = max_steps 
@@ -76,19 +77,19 @@ class DiffusionEnv(gym.Env):
         self.x0_t = self.A_inv_y.clone()
 
         # Save DDIM performance
-        with torch.no_grad():
-            for i in range(self.target_steps):
-                ddim_t = torch.tensor(self.uniform_steps[i])
-                if i != 0:
-                    ddim_x = self.DM.get_noisy_x(ddim_t, ddim_x0_t, self.ddim_et)
-                # else:
-                #     self.ddim_x = self.DM.get_noisy_x(ddim_t, self.ddim_x0_t, initial=True)
-                ddim_x0_t, _,  self.ddim_et = self.DM.single_step_ddnm(ddim_x, self.y, ddim_t, self.classes)
-        orig = inverse_data_transform(self.DM.config, self.x_orig[0]).to(self.DM.device)
-        ddim_x = inverse_data_transform(self.DM.config, ddim_x0_t[0]).to(self.DM.device)
-        ddim_mse = torch.mean((ddim_x - orig) ** 2)
-        self.ddim_psnr = 10 * torch.log10(1 / ddim_mse).item()
-        self.ddim_ssim = structural_similarity(ddim_x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
+        # with torch.no_grad():
+        #     for i in range(self.target_steps):
+        #         ddim_t = torch.tensor(self.uniform_steps[i])
+        #         if i != 0:
+        #             ddim_x = self.DM.get_noisy_x(ddim_t, ddim_x0_t, self.ddim_et)
+        #         # else:
+        #         #     self.ddim_x = self.DM.get_noisy_x(ddim_t, self.ddim_x0_t, initial=True)
+        #         ddim_x0_t, _,  self.ddim_et = self.DM.single_step_ddnm(ddim_x, self.y, ddim_t, self.classes)
+        # orig = inverse_data_transform(self.DM.config, self.x_orig[0]).to(self.DM.device)
+        # ddim_x = inverse_data_transform(self.DM.config, ddim_x0_t[0]).to(self.DM.device)
+        # ddim_mse = torch.mean((ddim_x - orig) ** 2)
+        # self.ddim_psnr = 10 * torch.log10(1 / ddim_mse).item()
+        # self.ddim_ssim = structural_similarity(ddim_x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
         
         # Save DDIM-100 (DDNM) performance
         '''ddim_x = self.x.clone()
@@ -142,26 +143,26 @@ class DiffusionEnv(gym.Env):
 
 
                 # Save subtask1 performance
-                ddim_x0_t = self.A_inv_y.clone()
-                with torch.no_grad():
-                    for i in range(self.target_steps):
-                        ddim_t = t - int(t / (self.target_steps - 1)) * i
-                        # print('pivot_t:',i, ddim_t)
-                        if i != 0:
-                            ddim_x = self.DM.get_noisy_x(ddim_t, ddim_x0_t, ddim_et)
-                        else:
-                            ddim_x = self.DM.get_noisy_x(ddim_t, ddim_x0_t, initial=True)
-                        ddim_x0_t, _,  ddim_et = self.DM.single_step_ddnm(ddim_x, self.y, ddim_t, self.classes)
-                ddim_x = inverse_data_transform(self.DM.config, ddim_x0_t[0]).to(self.DM.device)
-                ddim_mse = torch.mean((ddim_x - orig) ** 2)
-                self.pivot_psnr = 10 * torch.log10(1 / ddim_mse).item()
-                self.pivot_ssim = structural_similarity(ddim_x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
+                # ddim_x0_t = self.A_inv_y.clone()
+                # with torch.no_grad():
+                #     for i in range(self.target_steps):
+                #         ddim_t = t - int(t / (self.target_steps - 1)) * i
+                #         # print('pivot_t:',i, ddim_t)
+                #         if i != 0:
+                #             ddim_x = self.DM.get_noisy_x(ddim_t, ddim_x0_t, ddim_et)
+                #         else:
+                #             ddim_x = self.DM.get_noisy_x(ddim_t, ddim_x0_t, initial=True)
+                #         ddim_x0_t, _,  ddim_et = self.DM.single_step_ddnm(ddim_x, self.y, ddim_t, self.classes)
+                # ddim_x = inverse_data_transform(self.DM.config, ddim_x0_t[0]).to(self.DM.device)
+                # ddim_mse = torch.mean((ddim_x - orig) ** 2)
+                # self.pivot_psnr = 10 * torch.log10(1 / ddim_mse).item()
+                # self.pivot_ssim = structural_similarity(ddim_x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
                 observation = {
                     "image": self.x0_t[0].cpu(), 
                     "value": np.array([999]),
                     "remain": np.array([self.target_steps]),
                 }
-        del ddim_x, ddim_x0_t, ddim_mse, orig
+        # del ddim_x, ddim_x0_t, ddim_mse, orig
         gc.collect()
         torch.cuda.empty_cache()  # Clear GPU cache
         # images = (self.GT_image / 2 + 0.5).clamp(0, 1)
@@ -184,10 +185,10 @@ class DiffusionEnv(gym.Env):
                 # start_t = 999 * (action)# + 1) / 2 # Continuous action space
                 t = torch.tensor(int(max(0, min(start_t, 999))))
                 # print('t:', t)
-                self.old_interval = initial_t // (self.target_steps - 1)
+                # self.old_interval = initial_t // (self.target_steps - 1)
                 self.interval = int(t / (self.target_steps - 1)) 
                 self.x = self.DM.get_noisy_x(t, self.x0_t, initial=True)
-                self.pivot_x = self.DM.get_noisy_x(initial_t, self.x0_t, initial=True)
+                # self.pivot_x = self.DM.get_noisy_x(initial_t, self.x0_t, initial=True)
                 self.action_sequence.append(action.item())
             else: # Second subtask
                 initial_t = self.previous_t - self.interval if self.current_step_num != 0 else self.previous_t
@@ -195,7 +196,7 @@ class DiffusionEnv(gym.Env):
                 t = initial_t - self.interval * action
                 thres = 999 if self.current_step_num == 0 else self.time_step_sequence[-1]
                 t = torch.tensor(int(max(0, min(t, thres))))
-                self.old_interval = self.interval
+                # self.old_interval = self.interval
                 self.interval = int(t / (self.target_steps - self.current_step_num - 1)) if (self.target_steps - self.current_step_num - 1) != 0 else self.interval
                 self.x = self.DM.get_noisy_x(t, self.x0_t, self.et) if self.current_step_num != 0 else self.DM.get_noisy_x(t, self.x0_t, initial=True)
                 # self.pivot_x = self.DM.get_noisy_x(initial_t, self.x0_t, self.et)
@@ -395,21 +396,30 @@ class DiffusionEnv(gym.Env):
 
         # reward += 0.5 * (psnr - pivot_psnr) / (27.46 - 26.82)
         # reward += 0.5 * (ssim - pivot_ssim) / (0.01)
+
+        self.ddim_ssim = 0
+        self.ddim_psnr = 0
         if self.adjust == False: # First subtask
             self.pivot_ssim = self.ddim_ssim
             self.pivot_psnr = self.ddim_psnr
-            
-        if ssim > self.pivot_ssim:
-            reward += ssim / self.pivot_ssim
-        else:
-            reward -= self.pivot_ssim / ssim
-        if psnr > self.pivot_psnr:
-            reward += psnr / self.pivot_psnr
-        else:
-            reward -= self.pivot_psnr / psnr
 
+        # a = 1
+            
+        # if ssim > self.pivot_ssim:
+        #     reward += ssim / self.pivot_ssim * a
+        # else:
+        #     reward -= self.pivot_ssim / ssim * a
+        # if psnr > self.pivot_psnr:
+        #     reward += psnr / self.pivot_psnr * (1)
+        # else:
+        #     reward -= self.pivot_psnr / psnr * (1)
+
+        reward += ssim + psnr 
+        
         if not done:
             reward /= self.target_steps
+
+       
 
         # Intermediate reward
         '''if not done:# and psnr > self.ddim_psnr and ssim > self.ddim_ssim:
@@ -447,3 +457,4 @@ class DiffusionEnv(gym.Env):
     def set_adjust(self, adjust):
         self.adjust = adjust
         print(f"Set adjust to {adjust}")
+
