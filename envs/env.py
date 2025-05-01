@@ -14,6 +14,7 @@ import gc
 from tqdm import tqdm
 from stable_baselines3.common.callbacks import BaseCallback
 
+S1_CONTI=True
 
 
 class DiffusionEnv(gym.Env):
@@ -45,7 +46,10 @@ class DiffusionEnv(gym.Env):
                 "remain": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
         else: # Subtask 1
-            self.action_space = spaces.Discrete(100) # Discrete action space
+            if S1_CONTI:
+                self.action_space = gym.spaces.Box(low=0, high=1)
+            else:
+                self.action_space = spaces.Discrete(100) # Discrete action space
             # self.action_space = gym.spaces.Box(low=0, high=1) # Continuous action space
             self.observation_space = Dict({
                 "image": Box(low=-1, high=1, shape=(3, self.sample_size, self.sample_size), dtype=np.float32),
@@ -53,6 +57,7 @@ class DiffusionEnv(gym.Env):
             })
 
         # Initialize the random seed
+        self.data_idx = 0
         self.seed(seed)
         self.reset()
         # print("Training data size:", len(self.DM.dataset))
@@ -63,14 +68,27 @@ class DiffusionEnv(gym.Env):
         torch.manual_seed(seed)
         torch.random.manual_seed(seed)
     
-    def reset(self, seed=None, options=None):
+    def reset(self, isValid=False, seed=None, options=None):
         if seed is not None:
             self.seed(seed)
         self.current_step_num = 0
         self.time_step_sequence = []
         self.action_sequence = []
-        self.data_idx = random.randint(0, len(self.DM.dataset)-1)
-        self.x_orig, self.classes = self.DM.dataset[self.data_idx]
+        self.isValid = isValid
+        self.shuffled_indices = []
+        
+
+        if self.isValid:
+            self.dataset = self.DM.val_dataset
+            if not self.shuffled_indices:
+                self.shuffled_indices = random.sample(range(len(self.dataset)), len(self.dataset))
+            self.data_idx = self.shuffled_indices.pop(0)
+
+        else:
+            self.dataset = self.DM.train_dataset
+            self.data_idx = random.randint(0, len(self.dataset)-1)
+
+        self.x_orig, self.classes = self.dataset[self.data_idx]
         self.x, self.y, self.Apy, self.x_orig, self.A_inv_y = self.DM.preprocess(self.x_orig, self.data_idx)
         ddim_x = self.x.clone()
         ddim_x0_t = self.A_inv_y.clone()
@@ -181,8 +199,11 @@ class DiffusionEnv(gym.Env):
             ### RL step
             if self.adjust == False: # First subtask
                 initial_t = torch.tensor(500)
-                start_t = 10 * (1+action) - 1 # Discrete action space
-                # start_t = 999 * (action)# + 1) / 2 # Continuous action space
+                if S1_CONTI:
+                     start_t = 999 * (action)# + 1) / 2 # Continuous action space
+                else:
+                    start_t = 10 * (1+action) - 1 # Discrete action space
+               
                 t = torch.tensor(int(max(0, min(start_t, 999))))
                 # print('t:', t)
                 # self.old_interval = initial_t // (self.target_steps - 1)
@@ -335,6 +356,8 @@ class DiffusionEnv(gym.Env):
 
         # Finish the episode if denoising is done
         done = (self.current_step_num == self.target_steps - 1) or not self.adjust
+
+            
         # Calculate reward
         reward, ssim, psnr, ddim_ssim, ddim_psnr, pivot_ssim, pivot_psnr = self.calculate_reward(done)
         # Save figure

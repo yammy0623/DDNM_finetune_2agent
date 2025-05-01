@@ -93,7 +93,7 @@ def main():
     my_config['save_path'] = f'model/{args.eval_model_name}/best'
 
     ### Load agent of subtask1 with SB3
-    agent1 = A2C.load(my_config['save_path'])
+    agent1 = my_config["algorithm"].load(my_config['save_path'])
     print("Loaded model from: ", my_config['save_path'])
 
     config = {

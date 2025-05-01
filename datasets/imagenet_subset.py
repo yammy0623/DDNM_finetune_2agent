@@ -48,7 +48,7 @@ def default_loader(path):
 import os
 class ImageDataset(data.Dataset):
 
-    def __init__(self, root_dir, transform=None, image_size=256, normalize=True):
+    def __init__(self, root_dir, transform=None, val_mode=False, image_size=256, normalize=True):
         """
         Args:
             root_dir (str): 根目錄，包含圖像類別子文件夾。
@@ -59,11 +59,23 @@ class ImageDataset(data.Dataset):
         self.root_dir = root_dir
         self.classes = sorted(os.listdir(root_dir))  # 假設子文件夾名稱對應類別
         self.samples = []
+
+        # each class
         for cls_idx, cls_name in enumerate(self.classes):
             cls_path = os.path.join(root_dir, cls_name)
             if os.path.isdir(cls_path):
-                for img_name in os.listdir(cls_path):
-                    self.samples.append((os.path.join(cls_path, img_name), cls_idx))
+                # split train and validation
+                img_list = sorted(os.listdir(cls_path))
+                val_img = img_list[0]
+                train_imgs = img_list[1:]
+                if val_mode:
+                    self.samples.append((os.path.join(cls_path, val_img), cls_idx))
+                else:
+                    for img_name in train_imgs:
+                        self.samples.append((os.path.join(cls_path, img_name), cls_idx))
+
+                # for img_name in os.listdir(cls_path):
+                #     self.samples.append((os.path.join(cls_path, img_name), cls_idx))
 
         if transform is not None:
             self.transform = transform
