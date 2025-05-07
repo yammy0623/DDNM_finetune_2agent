@@ -20,7 +20,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # train ours (1st subtask)
 python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --seed $SEED --save_path "./model/"$SAVEFOLDER --id $ID
 # eval ours (1st subtask)
-python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name "$DEG"_imagenet_2_agents_"$ALG"_"$STEPS" --save_path "./model/"$SAVEFOLDER --subtask1 --id $ID >> model/"$SAVEFOLDER"/subtask1.txt
+python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name $SAVEFOLDER --save_path "./model/"$SAVEFOLDER --subtask1 --id $ID >> model/"$SAVEFOLDER"/subtask1.txt
 # train ours (2nd subtask)
 # python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --second_stage --seed $SEED
 # eval ours
