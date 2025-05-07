@@ -1,42 +1,69 @@
-# Zero-Shot Image Restoration Using Denoising Diffusion Null-Space Model
-## 📖[**Paper**](https://arxiv.org/pdf/2212.00490.pdf)|🖼️[**Project Page**](https://wyhuai.github.io/ddnm.io/)| <a href="https://colab.research.google.com/drive/1SRSD6GXGqU0eO2CoTNY-2WykB9qRZHJv?usp=sharing"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="google colab logo"></a> [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/hysts/DDNM-HQ)
-
-[Yinhuai Wang*](https://wyhuai.github.io/info/), [Jiwen Yu*](https://scholar.google.com.hk/citations?user=uoRPLHIAAAAJ), [Jian Zhang](https://jianzhang.tech/)  
-Peking University and PCL  
-\*denotes equal contribution
-
-
-
-This repository contains the code release for *Zero-Shot Image Restoration Using ***D***enoising ***D***iffusion ***N***ull-Space ***M***odel*. **DDNM** can solve various image restoration tasks **without any optimization or training! Yes, in a zero-shot manner**.
-
-
-***Supported Applications:***
-- **Arbitrary Size**🆕
-- **Old Photo Restoration**🆕
-- Super-Resolution
-- Denoising
-- Colorization
-- Inpainting
-- Deblurring
-- Compressed Sensing
-
-
-![front](https://user-images.githubusercontent.com/95485229/227095293-1024f337-1fde-494b-ae82-97d6139bbefe.jpg)
-
-
-
-## 🧩News
-- A Colab demo for high-quality results is now avaliable! <a href="https://colab.research.google.com/drive/1SRSD6GXGqU0eO2CoTNY-2WykB9qRZHJv?usp=sharing"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="google colab logo"></a>
+# AS^2
 
 ## Installation
-### Code
-```
-git clone https://github.com/wyhuai/DDNM.git
-```
+
 ### Environment
 ```
-pip install numpy torch blobfile tqdm pyYaml pillow    # e.g. torch 1.7.1+cu110.
+pip install -r requirement.txt
 ```
+### Dataset
+1. Download ImageNet2012 and put it into `\tmp2\ICML2025\ImageNet`
+2. Download celeba_hq and put it into  `\tmp2\ICML2025\celeba_hq\celeba_hq_256`
+
+
+### Pretrained Model
+1. for human face images, download this [model](https://drive.google.com/file/d/1wSoA5fm_d6JBZk4RZ1SzWLMgev4WqH21/view?usp=share_link)(from [SDEdit](https://github.com/ermongroup/SDEdit)) and put it into `[EXP]/logs/celeba/`. 
+
+
+2. for general images (eg: ImageNet), download this [model](https://openaipublic.blob.core.windows.net/diffusion/jul-2021/256x256_diffusion_uncond.pt)(from [guided-diffusion](https://github.com/openai/guided-diffusion)) and put it into `[EXP]/logs/imagenet/`.
+
+
+### script
+```
+EXP: experiment location (including saving image, pretrained model)
+IMAGE_FOLDER: saving img location
+SEED: random seed (for multiple seed experiement)
+DEG: degradation task
+ALG: RL alg
+STEPS: diffusion target timesteps
+MODE: training mode
+DATASET: dataset name
+NUM_TRAIN_ENV: training environment
+
+SAVEFOLDER: experimental training model location
+ID: id for wandb
+```
+
+example: 
+```
+EXP="/tmp2/ICML2025/ddnm_finetune"
+IMAGE_FOLDER="/tmp2/ICML2025/ddnm_finetune/imagenet"
+SEED=232
+DEG="deblur_gauss"
+ALG="PPO"
+STEPS=5
+MODE="2_agents"
+DATASET="imagenet"
+NUM_TRAIN_ENV="16"
+
+SAVEFOLDER=$DEG"_imagenet_2_agents_"$ALG"_"$STEPS"_s1_conti_hist"
+ID=$DEG"_"$DATASET"_"$MODE"_"$ALG"_env_"$NUM_TRAIN_ENV"_steps_"$STEPS"_s1_conti_hist"
+```
+
+### training example
+```
+# train ours (1st subtask)
+python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --seed $SEED --save_path "./model/"$SAVEFOLDER --id $ID
+# eval ours (1st subtask)
+python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name "$DEG"_imagenet_2_agents_"$ALG"_"$STEPS" --save_path "./model/"$SAVEFOLDER --subtask1 --id $ID >> model/"$SAVEFOLDER"/subtask1.txt
+
+# train ours (2nd subtask)
+# python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --second_stage --seed $SEED
+# eval ours
+# python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name "$DEG"_imagenet_2_agents_"$ALG"_"$STEPS" >> model/"$DEG"_imagenet_2_agents_"$ALG"_"$STEPS"/subtask2.txt
+```
+
+## [DDNM original work]
 ### Pre-Trained Models
 To restore human face images, download this [model](https://drive.google.com/file/d/1wSoA5fm_d6JBZk4RZ1SzWLMgev4WqH21/view?usp=share_link)(from [SDEdit](https://github.com/ermongroup/SDEdit)) and put it into `DDNM/exp/logs/celeba/`. 
 ```
