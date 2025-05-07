@@ -1,31 +1,46 @@
 EXP="/tmp2/ICML2025/ddnm_finetune"
 IMAGE_FOLDER="/tmp2/ICML2025/ddnm_finetune/imagenet"
 SEED=232
+DEG="deblur_gauss"
+ALG="PPO"
+STEPS=5
+MODE="2_agents"
+DATASET="imagenet"
+NUM_TRAIN_ENV="16"
 
-mkdir -p model/sr_bicubic_imagenet_2_agents_A2C_5
-# SR 5
+SAVEFOLDER=$DEG"_imagenet_2_agents_"$ALG"_"$STEPS"_s1_conti_hist"
+ID=$DEG"_"$DATASET"_"$MODE"_"$ALG"_env_"$NUM_TRAIN_ENV"_steps_"$STEPS"_s1_conti_hist"
+    
+
+# Deblur
 # train ours (1st subtask)
 export CUDA_VISIBLE_DEVICES=0
-python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --seed $SEED
-# eval ours (1st subtask)
-python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 --subtask1 >> model/sr_bicubic_imagenet_2_agents_A2C_5/subtask1.txt
-# train ours (2nd subtask)
-# python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --second_stage --seed $SEED
-# # eval ours
-# python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_sub2.txt
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# cp ./model/sr_bicubic_imagenet_2_agents_A2C_5/best.zip ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_orig.zip
-# cp ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_2.zip ./model/sr_bicubic_imagenet_2_agents_A2C_5/best_2_orig.zip
+# train ours (1st subtask)
+python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --seed $SEED --save_path "./model/"$SAVEFOLDER --id $ID
+# eval ours (1st subtask)
+python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name "$DEG"_imagenet_2_agents_"$ALG"_"$STEPS" --save_path "./model/"$SAVEFOLDER --subtask1 --id $ID >> model/"$SAVEFOLDER"/subtask1.txt
+# train ours (2nd subtask)
+# python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_  --target_steps 5 --second_stage --seed $SEED
+# eval ours
+# python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg $DEG  --sigma_y 0. -i imagenet_"$ALG"_5_eval --target_steps 5 --eval_model_name "$DEG"_imagenet_2_agents_"$ALG"_"$STEPS" >> model/"$DEG"_imagenet_2_agents_"$ALG"_"$STEPS"/subtask2.txt
+
+# cp ./model/deblur_gauss_imagenet_2_agents_A2C_5/best.zip ./model/deblur_gauss_imagenet_2_agents_A2C_5/best_orig.zip
+# cp ./model/deblur_gauss_imagenet_2_agents_A2C_5/best_2.zip ./model/deblur_gauss_imagenet_2_agents_A2C_5/best_2_orig.zip
+
+
 # finetune
 # for Iter in {1..5}; do
 #     echo "Iteration: $Iter"
-#     python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --finetune 1 --finetune_ratio 0.2
+#     # train ours (1st subtask)
+#     python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --finetune 1 --finetune_ratio 0.2
 #     # eval ours (1st subtask)
-#     python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 --subtask1 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub1.txt
+#     python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5  --subtask1 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub1.txt
 #     # train ours (2nd subtask)
-#     python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_ --target_steps 5 --second_stage --finetune 1 --finetune_ratio 0.2
+#     python train.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_  --target_steps 5 --second_stage --finetune 1 --finetune_ratio 0.2
 #     # eval ours
-#     python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "sr_bicubic" --deg_scale 4 --sigma_y 0. -i imagenet_sr_bc_4_5_eval --target_steps 5 --eval_model_name sr_bicubic_imagenet_2_agents_A2C_5 >> model/sr_bicubic_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub2.txt
+#     python eval.py --ni --config imagenet_256.yml --exp $EXP --path_y imagenet --eta 0.85 --deg "deblur_gauss" --sigma_y 0. -i imagenet_deblur_g_5_eval --target_steps 5 --eval_model_name deblur_gauss_imagenet_2_agents_A2C_5 >> model/deblur_gauss_imagenet_2_agents_A2C_5/2_agents_fine_${Iter}_sub2.txt
 # done
 
 
