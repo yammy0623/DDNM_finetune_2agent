@@ -105,7 +105,8 @@ def log_custom_histogram(data, name, bin_width=None, num_bins=None):
 
     hist, bin_edges = np.histogram(data, bins=bins)
 
-    wandb.log({name: wandb.Histogram(np_histogram=(hist, bin_edges))})
+    if WANDB_CALLBACK:
+        wandb.log({name: wandb.Histogram(np_histogram=(hist, bin_edges))})
 
     
 class CustomCNN(BaseFeaturesExtractor):
@@ -314,16 +315,24 @@ def train(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my
     current_best_ssim = 0
     print("total training epochs: ", int(epoch_num))
 
-    if WANDB_CALLBACK:
-        wandb_callback = WandbCallback(
-            gradient_save_freq=100,
-            verbose=2,
-        )
+    # if WANDB_CALLBACK:
+    #     run = wandb.init(
+    #         project="exp_"+args.path_y+"_"+args.deg+str(args.target_steps),
+    #         config=my_config,
+    #         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+    #         id=my_config["run_id"],
+    #         resume=False
+    #     )
+
+        # wandb_callback = WandbCallback(
+        #     gradient_save_freq=100,
+        #     verbose=2,
+        # )
     
-    start_t_callback = CustomWandbCallback()
+    # start_t_callback = CustomWandbCallback()
     reward_callback = RewardAccumulatorCallback()
     
-    callback_list = [reward_callback, wandb_callback, start_t_callback]
+    callback_list = [reward_callback]
 
     for epoch in range(int(epoch_num)):
 
@@ -382,24 +391,24 @@ def train(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my
         total_MB = total / 1024**2
         percent = used / total * 100
         print(f"GPU Memory Usage: {used_MB:.2f} MB / {total_MB:.2f} MB ({percent:.2f}%)")
-        wandb.log(
-            {
-                "avg_reward": avg_reward,
-                "avg_ssim": avg_ssim,
-                "avg_psnr": avg_psnr,
-                # "pivot_ssim": pivot_ssim,
-                # "pivot_psnr": pivot_psnr,
-                # "ddim_ssim": ddim_ssim,
-                # "ddim_psnr": ddim_psnr,
-                # "ddnm_ssim": ddnm_ssim,
-                # "ddnm_psnr": ddnm_psnr,
+        # wandb.log(
+        #     {
+        #         "avg_reward": avg_reward,
+        #         "avg_ssim": avg_ssim,
+        #         "avg_psnr": avg_psnr,
+        #         # "pivot_ssim": pivot_ssim,
+        #         # "pivot_psnr": pivot_psnr,
+        #         # "ddim_ssim": ddim_ssim,
+        #         # "ddim_psnr": ddim_psnr,
+        #         # "ddnm_ssim": ddnm_ssim,
+        #         # "ddnm_psnr": ddnm_psnr,
 
-                "start_t": avg_t[0],
-                "train_reward": [] if not reward_callback.all_epoch_averages[-1] else reward_callback.all_epoch_averages[-1],
-                "gpu_process_memory_MB": used_MB,
-                "gpu_process_memory_percent": percent,
-            }
-        )
+        #         "start_t": avg_t[0],
+        #         "train_reward": [] if not reward_callback.all_epoch_averages[-1] else reward_callback.all_epoch_averages[-1],
+        #         "gpu_process_memory_MB": used_MB,
+        #         "gpu_process_memory_percent": percent,
+        #     }
+        # )
     
     with done_val.get_lock():
         done_val.value = True
@@ -412,16 +421,24 @@ def log_gpu_memory(step=None, gpu_index=0):
     total_MB = total / 1024**2
     percent = used / total * 100
 
-    wandb.log({
-        "system/gpu_process_memory_MB": used_MB,
-        "system/gpu_process_memory_percent": percent,
-    })
+    # wandb.log({
+    #     "system/gpu_process_memory_MB": used_MB,
+    #     "system/gpu_process_memory_percent": percent,
+    # })
+
+    
 
 
     
 
 import torch
 def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args, config):
+    device = (
+        torch.device("cuda")
+        if torch.cuda.is_available()
+        else torch.device("cpu")
+    )
+
     # def seed_worker(worker_id):
     #     worker_seed = args.seed % 2 ** 32
     #     np.random.seed(worker_seed)
@@ -431,6 +448,7 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args
     g.manual_seed(args.seed)
 
     diffusion_model = my_diffusion(args, config)
+    print("diffusion_model initialized")
 
 
     if isValid:
@@ -438,6 +456,8 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args
     else:
         dataset = diffusion_model.train_dataset
 
+    
+    print("prepare data_loader")
     data_loader = data.DataLoader(
         dataset,
         batch_size=num_env,
@@ -446,19 +466,29 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args
         # worker_init_fn=seed_worker,
         generator=g,
     )
+    
+    print("get data_loader")
         
-    for x_orig, classes in enumerate(data_loader):
+    for x_orig, classes in data_loader:
+        # print("x_orig", x_orig)
+        # print("classes", classes)
         print("load data")
+        # print("x_orig shape", x_orig.shape)
+        # print("classes shape", classes.shape)
 
         if done_val.value:
+            print("done_val.value = True")
             break
 
         x, y, Apy, x_orig, A_inv_y = diffusion_model.preprocess(x_orig, None)
         x0_t = A_inv_y.clone()
+        print("x0_t shape", x0_t.shape)
 
         # initialize the queue
         for env_id in range(num_env):
-            x0_t_queue[env_id].put((x0_t, None))
+            x0_t_queue[env_id].put((x0_t[env_id].cpu(), None))
+        
+
         
         # while not rl_done_val.value:
         x0_t_all = []
@@ -466,49 +496,58 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args
         et_all = []
 
         if not t_queue[0].empty():
+            print("t_queue not empty")
+    
+        for env_id in range(num_env):
+            t = t_queue[env_id].get()
+            t_all.append(torch.tensor(t).to(device))
+
+        if INIT:
+            print("first step")
             for env_id in range(num_env):
-                t = t_queue[env_id].get()
-                t_all.append(t)
-
-            if INIT:
-                print("first step")
-                for env_id in range(num_env):
-                    x0_t, _ = x0_t_queue[env_id].get()
-                    x0_t_all.append(x0_t)
-                x = diffusion_model.get_noisy_x(t_all, x0_t_all, initial=True)
-                et_all = [None] * num_env  # no et for the first step
-            else:
-                for env_id in range(num_env):
-                    x0_t, et = x0_t_queue[env_id].get()
-                    x0_t_all.append(x0_t)
-                    et_all.append(et)
-                x = diffusion_model.get_noisy_x(t_all, x0_t_all, et_all)
-
-            x0_t_all, _, et_all = diffusion_model.single_step_ddnm(x, y, t_all, classes)
-
+                x0_t, _ = x0_t_queue[env_id].get()
+                x0_t_all.append(x0_t)
+            x = diffusion_model.get_noisy_x(t_all, x0_t_all, initial=True)
+            et_all = [None] * num_env  # no et for the first step
+        else:
             for env_id in range(num_env):
-                x0_t_queue[env_id].put((x0_t_all[env_id], et_all[env_id]))
+                x0_t, et = x0_t_queue[env_id].get()
+                x0_t_all.append(x0_t)
+                et_all.append(et)
+            x = diffusion_model.get_noisy_x(t_all, x0_t_all, et_all)
+
+        x0_t_all, _, et_all = diffusion_model.single_step_ddnm(x, y, t_all, classes)
+        print("diffusion step done")
+
+        for env_id in range(num_env):
+            x0_t_queue[env_id].put((x0_t_all[env_id], et_all[env_id]))
+        print("put x0_t to queue")
 
             
 
 
+manager = None
+t_queues = None
+x0_t_queues = None
+done_val = None
 
 def main():
+    global manager, t_queues, x0_t_queues, done_val
+    
+    manager = mp.Manager()
     # Initialze DDNM
     args, config = parse_args_and_config()
     # training_data = 256
-    runner = my_diffusion(args, config)
+    # runner = my_diffusion(args, config)
 
     policy_kwargs = dict(
         features_extractor_class=CustomCNN,
         features_extractor_kwargs=dict(features_dim=256),
     )
 
-
-
+    # Initialize config
     my_config = {
         "alg": "PPO",
-        # "algorithm": PPO if alg == "PPO" else A2C,
         "target_steps": args.target_steps,
         "threshold": 0.9,
         "num_train_envs": 2,
@@ -518,7 +557,7 @@ def main():
         "policy_kwargs": policy_kwargs,
         "iteration": 1,
         "eval_episode_num": 8,
-        "learning_rate": 3e-4, 
+        "learning_rate": 3e-4,
         "first_stage_epoch_num": 50,
         "epoch_num": 200,
         "diffusion_max_steps": 100,
@@ -527,34 +566,34 @@ def main():
         "finetune": args.finetune,
         "seed": args.seed,
         'save_path': args.save_path,
-        # "training_data": training_data
+        "run_id": f"{args.id}{'_S2' if not args.baseline and args.second_stage else '_S1' if not args.baseline else ''}"
     }
-    my_config['timesteps_per_epoch'] = my_config['num_train_envs'] * my_config['n_steps'] * my_config['iteration']
-    my_config['run_id'] = args.id
-    print("Run ID: ", my_config['run_id'])
-    if args.baseline == False:
-        my_config['run_id'] += '_S2' if args.second_stage else '_S1'
 
-    if not os.path.exists(my_config['save_path']):
-        os.makedirs(my_config['save_path'])
+    # Derived configurations
+    my_config['timesteps_per_epoch'] = my_config['num_train_envs'] * my_config['n_steps'] * my_config['iteration']
+    my_config['algorithm'] = PPO if my_config["alg"] == "PPO" else A2C
+
+    # Print and create directories
+    print("Run ID: ", my_config['run_id'])
+    os.makedirs(my_config['save_path'], exist_ok=True)
 
     # Save config to file
     with open(os.path.join(my_config['save_path'], 'config.yml'), 'w') as f:
         for key, value in my_config.items():
             f.write(f"{key}: {value}\n")
+
     print("Config", my_config)
 
-    my_config['algorithm'] = PPO if my_config["alg"] == "PPO" else A2C
 
     
-    if WANDB_CALLBACK:
-        run = wandb.init(
-            project="exp_"+args.path_y+"_"+args.deg+str(args.target_steps),
-            config=my_config,
-            sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-            id=my_config["run_id"],
-            resume=False
-        )
+    # if WANDB_CALLBACK:
+    #     run = wandb.init(
+    #         project="exp_"+args.path_y+"_"+args.deg+str(args.target_steps),
+    #         config=my_config,
+    #         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+    #         id=my_config["run_id"],
+    #         resume=False
+    #     )
     
 
     # Create training environment 
@@ -576,24 +615,16 @@ def main():
 
     print("env_config: ", env_config)
     # create queue for each env
-    manager = mp.Manager()
+    
     t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
     x0_t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
     done_val = manager.Value('b', False)
-    print("t_queues: ", t_queues)
-    print("x0_t_queues: ", x0_t_queues)
-    # print("t_queues: ", t_queues)
-
+    print("t_queues created")
+    print("x0_t_queues created")
+    
     # Multiple Process
-
-
     processes = []
     p_diffusion = mp.Process(target=diffusion_worker, args=(True, done_val, t_queues, x0_t_queues, False, num_train_envs, args, config))
-    p_diffusion.start()
-    processes.append(p_diffusion)
-
-
-
     
     
     env_config["agent2"] = None
@@ -609,35 +640,14 @@ def main():
         "agent2": env_config["agent2"],
         
     }
-
     p_rl = mp.Process(target=train, args=(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my_config))
+    p_diffusion.start()
+    # processes.append(p_diffusion)
     p_rl.start()
-    processes.append(p_rl)
+    # processes.append(p_rl)
 
-    # else:
-    #     ### Second stage training
-    #     epoch_num = my_config['epoch_num']
-    #     print("Loaded model from: ", f"{my_config['save_path']}/best")
-    #     agent1 = my_config["algorithm"].load(f"{my_config['save_path']}/best")
-    #     config['agent1'] = agent1
-    #     config['agent2'] = None
-    #     config["model_mode"] = my_config["model_mode"]
-
-    #     train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
-    #     del config["model_mode"], config['agent2']
-        
-    #     eval_env = gym.make('final-ours', **config)
-    #     model2 = my_config["algorithm"](
-    #         my_config["policy_network"], 
-    #         train_env, 
-    #         verbose=2,
-    #         n_steps=my_config["n_steps"],
-    #         tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
-    #         learning_rate=my_config["learning_rate"],
-    #         policy_kwargs=my_config["policy_kwargs"],
-    #     )
-    #     train(eval_env, model2, my_config, epoch_num = epoch_num, second_stage=True, num_steps = args.target_steps, callback=reward_accumulator)
-
+    p_diffusion.join()
+    p_rl.join()
 if __name__ == '__main__':
     print("Before setting:", th.cuda.memory_reserved())
     # th.cuda.set_per_process_memory_fraction(0., device=0)

@@ -106,13 +106,11 @@ class NoDiffusionEnv(gym.Env):
         # self.x0_t = self.A_inv_y.clone()
 
         # ================= DDNM ================= 
-        print("reset")
-        
-        if not self.x0_t_queue.empty():
-            self.x0_t = self.x0_t_queue.get()
-        else:
-            self.x0_t = None
-        print("sent")
+        print("waiting for x0_t from queue")
+        self.x0_t = self.x0_t_queue.get()
+        print("get x0_t from queue")
+        print("x0_t shape:", self.x0_t[0].shape)
+
         
         # Save DDIM performance
         # with torch.no_grad():
@@ -149,7 +147,7 @@ class NoDiffusionEnv(gym.Env):
 
         
         observation = {
-            "image": self.x0_t,  
+            "image": self.x0_t[0],  
             # "value": np.array([999]),
         }
         
@@ -264,7 +262,7 @@ class NoDiffusionEnv(gym.Env):
             
             self.time_step_sequence.append(t)
 
-            self.t_queue.put(t.item())
+            self.t_queue.put(t)
 
 
             isFromDegraded = True

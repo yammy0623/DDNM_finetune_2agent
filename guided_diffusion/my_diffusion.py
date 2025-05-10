@@ -325,7 +325,7 @@ class Diffusion(object):
 
     def preprocess(self, x_orig, idx_so_far):        
         args, config = self.args, self.config
-        x_orig = x_orig.unsqueeze(0).to(self.device)
+        x_orig = x_orig.to(self.device)
         x_orig = data_transform(self.config, x_orig)
 
         y = self.A_funcs.A(x_orig)
