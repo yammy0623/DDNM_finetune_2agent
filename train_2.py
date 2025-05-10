@@ -27,7 +27,7 @@ th.set_printoptions(sci_mode=False)
 warnings.filterwarnings("ignore")
 register(
     id='final-ours',
-    entry_point='envs:DiffusionEnv',
+    entry_point='envs:NoDiffusionEnv',
 )
 register(
     id='final-baseline',
@@ -64,29 +64,33 @@ class RewardAccumulatorCallback(BaseCallback):
             # Reset for the next epoch
             self.episode_rewards = []
 
-def make_env(my_config, rl_done_val, seed=None):
-    if seed is None:
-        seed = my_config["seed"]
+def make_env(my_config, env_id, t_queue, x0_t_queue, seed=None):
+    # seed = my_config["seed"]
     print("Seed: ", seed)
+    
     def _init():
-        config = {
-            "target_steps": my_config["target_steps"],
-            "max_steps": my_config["max_steps"],
-            "threshold": my_config["threshold"],
-            "seed": seed,
-            "rl_done_val": rl_done_val,
-            # "n_steps":my_config["n_steps"],
-        }
-        if my_config["agent2"] is not None:
-            config["agent2"] = my_config["agent2"]
-        
-        if my_config["model_mode"] == "baseline":
-            print('Baseline training mode ...')
-            return gym.make('final-baseline', **config)
-        else:
-            print('2-agent training mode ...')
-            config["agent1"] = my_config["agent1"]
-            return gym.make('final-ours', **config)
+        try:
+            config = {
+                "env_id": env_id,
+                "target_steps": my_config["target_steps"],
+                "max_steps": my_config["max_steps"],
+                "threshold": my_config["threshold"],
+                "seed": seed,
+                "t_queue": t_queue,
+                "x0_t_queue": x0_t_queue,
+                "agent1": my_config["agent1"],
+                "agent2": None if my_config["agent2"] is not None else my_config["agent2"],
+            }
+            
+            if my_config["model_mode"] == "baseline":
+                print('Baseline training mode ...')
+                return gym.make('final-baseline', **config)
+            else:
+                print('2-agent training mode ...')
+                return gym.make('final-ours', **config)
+        except Exception as e:
+            print(f"Error initializing environment {env_id}: {e}")
+            raise e  # Reraise exception to notify the caller
     return _init
 
 
@@ -268,7 +272,7 @@ def eval(env, model, eval_episode_num, num_steps):
     print("============ eval DONE ===============")
     return avg_reward, avg_ssim, avg_psnr, pivot_ssim, pivot_psnr, ddim_ssim, ddim_psnr, ddnm_ssim, ddnm_psnr, info['time_step_sequence'], info['action_sequence'], info['threshold'], avg_reward_t, avg_t
 
-def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_steps=5, callback=None):
+def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_steps=5):
     """Train agent using SB3 algorithm and my_config"""
     current_best_psnr = 0
     current_best_ssim = 0
@@ -281,7 +285,9 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
         )
     
     start_t_callback = CustomWandbCallback()
-    callback_list = [callback, wandb_callback, start_t_callback]
+    reward_callback = RewardAccumulatorCallback()
+    
+    callback_list = [reward_callback, wandb_callback, start_t_callback]
 
     for epoch in range(int(epoch_num)):
 
@@ -331,7 +337,7 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
         print("DDNM_psnr:   ", ddnm_psnr)
         print("Time_step_sequence:", time_step_sequence)
         print("Action_sequence:", action_sequence)
-        print("training reward", [] if not callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1])
+        print("training reward", [] if not reward_callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1])
         print()
         gpu_index=0
         total = th.cuda.get_device_properties(gpu_index).total_memory
@@ -353,7 +359,7 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
                 # "ddnm_psnr": ddnm_psnr,
 
                 "start_t": avg_t[0],
-                "train_reward": [] if not callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1],
+                "train_reward": [] if not reward_callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1],
                 "gpu_process_memory_MB": used_MB,
                 "gpu_process_memory_percent": percent,
             }
@@ -379,14 +385,17 @@ def log_gpu_memory(step=None, gpu_index=0):
     
 
 import torch
-def diffusion_worker(INIT, done_val, rl_done_val, diffusion_model, done_queue, t_queue, x0_t_queue, isValid, num_env, args, config):
-    def seed_worker(worker_id):
-        worker_seed = args.seed % 2 ** 32
-        np.random.seed(worker_seed)
-        random.seed(worker_seed)
+def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args, config):
+    # def seed_worker(worker_id):
+    #     worker_seed = args.seed % 2 ** 32
+    #     np.random.seed(worker_seed)
+    #     random.seed(worker_seed)
 
     g = torch.Generator()
     g.manual_seed(args.seed)
+
+    diffusion_model = my_diffusion(args, config)
+
 
     if isValid:
         dataset = diffusion_model.val_dataset
@@ -398,23 +407,29 @@ def diffusion_worker(INIT, done_val, rl_done_val, diffusion_model, done_queue, t
         batch_size=num_env,
         shuffle=True,
         num_workers=config.data.num_workers,
-        worker_init_fn=seed_worker,
+        # worker_init_fn=seed_worker,
         generator=g,
     )
         
     for x_orig, classes in enumerate(data_loader):
+        print("load data")
 
         if done_val.value:
             break
 
         x, y, Apy, x_orig, A_inv_y = diffusion_model.preprocess(x_orig, None)
         x0_t = A_inv_y.clone()
-        
-        while not rl_done_val.value:
-            x0_t_all = []
-            t_all = []
-            et_all = []
 
+        # initialize the queue
+        for env_id in range(num_env):
+            x0_t_queue[env_id].put((x0_t, None))
+        
+        # while not rl_done_val.value:
+        x0_t_all = []
+        t_all = []
+        et_all = []
+
+        if not t_queue[0].empty():
             for env_id in range(num_env):
                 t = t_queue[env_id].get()
                 t_all.append(t)
@@ -425,18 +440,19 @@ def diffusion_worker(INIT, done_val, rl_done_val, diffusion_model, done_queue, t
                     x0_t, _ = x0_t_queue[env_id].get()
                     x0_t_all.append(x0_t)
                 x = diffusion_model.get_noisy_x(t_all, x0_t_all, initial=True)
+                et_all = [None] * num_env  # no et for the first step
             else:
                 for env_id in range(num_env):
                     x0_t, et = x0_t_queue[env_id].get()
                     x0_t_all.append(x0_t)
                     et_all.append(et)
+                x = diffusion_model.get_noisy_x(t_all, x0_t_all, et_all)
 
-                x = diffusion_model.get_noisy_x(t, x0_t, et)
-        
-            x0_t_all, _,  et_all = diffusion_model.single_step_ddnm(x, y, t, classes)
-            
+            x0_t_all, _, et_all = diffusion_model.single_step_ddnm(x, y, t_all, classes)
+
             for env_id in range(num_env):
-                x0_t_queue[env_id].put((x0_t, et))
+                x0_t_queue[env_id].put((x0_t_all[env_id], et_all[env_id]))
+
             
 
 
@@ -511,7 +527,7 @@ def main():
     
 
     # config for environment
-    config = {
+    env_config = {
             "target_steps": my_config["target_steps"],
             "max_steps": my_config["diffusion_max_steps"],
             "threshold": my_config["threshold"],
@@ -519,13 +535,30 @@ def main():
             "seed": my_config["seed"],
         }
     if args.baseline == False:
-        config["agent1"] = None
+        env_config["agent1"] = None
 
+
+    print("env_config: ", env_config)
     # create queue for each env
-    t_queues = {env_id: mp.Queue() for env_id in range(num_train_envs)}
-    x0_t_queues = {env_id: mp.Queue() for env_id in range(num_train_envs)}
-    rl_done_val = {env_id: mp.Value('b', False) for env_id in range(num_train_envs)}
+    manager = mp.Manager()
+    t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
+    x0_t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
     done_val = mp.Value('b', False)
+    print("t_queues: ", t_queues)
+    print("x0_t_queues: ", x0_t_queues)
+    # print("t_queues: ", t_queues)
+
+    # Multiple Process
+
+
+    processes = []
+    p_diffusion = mp.Process(target=diffusion_worker, args=(True, done_val, t_queues, x0_t_queues, False, num_train_envs, args, config))
+    p_diffusion.start()
+    processes.append(p_diffusion)
+
+
+
+    
     
     ### First stage training
     
@@ -540,13 +573,13 @@ def main():
         ### First stage finetuning stage (need to load agent 2)
         if args.finetune:
             agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best_2")
-            config['agent2'] = agent2
+            env_config['agent2'] = agent2
             # train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
-            train_env = SubprocVecEnv([make_env(config, rl_done_val[i]) for i in range(num_train_envs)])
+            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
         else:
-            config['agent2'] = None
+            env_config['agent2'] = None
             # train_env = DummyVecEnv([make_env(config, seed) for seed in range(num_train_envs)])
-            train_env = SubprocVecEnv([make_env(config, i, rl_done_val[i]) for i in range(num_train_envs)])
+            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
         
 
         model = my_config["algorithm"](
@@ -559,19 +592,23 @@ def main():
                 learning_rate=my_config["learning_rate"],
                 policy_kwargs=my_config["policy_kwargs"],
             )
-        del config["model_mode"], config["agent2"]
-        eval_env = gym.make('final-baseline', **config) if args.baseline else gym.make('final-ours', **config)
+        # del config["model_mode"], config["agent2"]
+        env_eval_config = {
+            "env_id": 0,
+            "t_queue": t_queues[0],
+            "x0_t_queue": x0_t_queues[0],
+            "target_steps": my_config["target_steps"],
+            "max_steps": my_config["diffusion_max_steps"],
+            "threshold": my_config["threshold"],
+            "seed": my_config["seed"],
+            "agent1": env_config["agent1"],
+            "agent2": env_config["agent2"],
+            
+        }
+        eval_env = gym.make('final-baseline', **env_eval_config) if args.baseline else gym.make('final-ours', **env_eval_config)
         
-        # Multiple Process
-
-
-
-        processes = []
-        p_diffusion = mp.Process(target=diffusion_worker, args=(True, done_val, runner, t_queues, x0_t_queues, False, num_train_envs, args, config))
-        p_rl = mp.Process(target=train, args=(done_val, eval_env, model, my_config, epoch_num, args.target_steps, reward_accumulator))
-        p_diffusion.start()
+        p_rl = mp.Process(target=train, args=(done_val, eval_env, model, my_config, epoch_num, args.target_steps))
         p_rl.start()
-        processes.append(p_diffusion)
         processes.append(p_rl)
 
     else:
@@ -601,6 +638,8 @@ def main():
 if __name__ == '__main__':
     print("Before setting:", th.cuda.memory_reserved())
     # th.cuda.set_per_process_memory_fraction(0., device=0)
+    # cuda 不支援fork 模式
+    mp.set_start_method("spawn", force=True)
     main()
 
 

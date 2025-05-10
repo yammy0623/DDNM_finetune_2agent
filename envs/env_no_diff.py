@@ -18,10 +18,12 @@ S1_CONTI=True
 
 
 class NoDiffusionEnv(gym.Env):
-    def __init__(self, rl_done, target_steps=10, max_steps=100, threshold=0.8, env_id=None, t_queue=None, out_queue=None, agent1=None, agent2=None, seed=232):
+    def __init__(self, env_id, target_steps=10, max_steps=100, threshold=0.8, t_queue=None, x0_t_queue=None, agent1=None, agent2=None, seed=232):
         super(NoDiffusionEnv, self).__init__()
         self.env_id = env_id
         # queue for diffusion image
+        self.x0_t_queue = x0_t_queue
+        self.t_queue = t_queue
 
 
         self.agent1 = agent1
@@ -59,6 +61,10 @@ class NoDiffusionEnv(gym.Env):
                 # "value": Box(low=np.array([0]), high=np.array([999]), dtype=np.uint16)
             })
 
+
+        print("NoDiffusionEnv built!")
+        
+
         # Initialize the random seed
         self.data_idx = 0
         self.seed(seed)
@@ -72,6 +78,7 @@ class NoDiffusionEnv(gym.Env):
         torch.random.manual_seed(seed)
     
     def reset(self, isValid=False, seed=None, options=None):
+        print("reset")
         if seed is not None:
             self.seed(seed)
         self.current_step_num = 0
@@ -81,25 +88,32 @@ class NoDiffusionEnv(gym.Env):
         self.shuffled_indices = []
         
         # ================= DDNM ================= 
-        if self.isValid:
-            self.dataset = self.DM.val_dataset
-            if not self.shuffled_indices:
-                self.shuffled_indices = random.sample(range(len(self.dataset)), len(self.dataset))
-            self.data_idx = self.shuffled_indices.pop(0)
+        # if self.isValid:
+        #     self.dataset = self.DM.val_dataset
+        #     if not self.shuffled_indices:
+        #         self.shuffled_indices = random.sample(range(len(self.dataset)), len(self.dataset))
+        #     self.data_idx = self.shuffled_indices.pop(0)
 
-        else:
-            self.dataset = self.DM.train_dataset
-            self.data_idx = random.randint(0, len(self.dataset)-1)
+        # else:
+        #     self.dataset = self.DM.train_dataset
+        #     self.data_idx = random.randint(0, len(self.dataset)-1)
 
-        self.x_orig, self.classes = self.dataset[self.data_idx]
-        self.x, self.y, self.Apy, self.x_orig, self.A_inv_y = self.DM.preprocess(self.x_orig, self.data_idx)
+        # self.x_orig, self.classes = self.dataset[self.data_idx]
+        # self.x, self.y, self.Apy, self.x_orig, self.A_inv_y = self.DM.preprocess(self.x_orig, self.data_idx)
 
-        ddim_x = self.x.clone()
-        ddim_x0_t = self.A_inv_y.clone()
-        self.x0_t = self.A_inv_y.clone()
+        # ddim_x = self.x.clone()
+        # ddim_x0_t = self.A_inv_y.clone()
+        # self.x0_t = self.A_inv_y.clone()
 
         # ================= DDNM ================= 
-
+        print("reset")
+        
+        if not self.x0_t_queue.empty():
+            self.x0_t = self.x0_t_queue.get()
+        else:
+            self.x0_t = None
+        print("sent")
+        
         # Save DDIM performance
         # with torch.no_grad():
         #     for i in range(self.target_steps):
@@ -135,7 +149,7 @@ class NoDiffusionEnv(gym.Env):
 
         
         observation = {
-            "image": self.x0_t[0].cpu(),  
+            "image": self.x0_t,  
             # "value": np.array([999]),
         }
         
@@ -182,7 +196,7 @@ class NoDiffusionEnv(gym.Env):
                 # self.pivot_psnr = 10 * torch.log10(1 / ddim_mse).item()
                 # self.pivot_ssim = structural_similarity(ddim_x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
                 observation = {
-                    "image": self.x0_t[0].cpu(), 
+                    "image": self.x0_t.cpu(), 
                     "value": np.array([999]),
                     "remain": np.array([self.target_steps]),
                 }
@@ -199,6 +213,11 @@ class NoDiffusionEnv(gym.Env):
         return observation, {}
     
     def step(self, action):
+        print("step")
+        if not self.x0_t_queue.empty():
+            self.x0_t = self.x0_t_queue.get()
+        else:
+            self.x0_t = None
         truncate = True if self.current_step_num >= self.max_steps else False
         # Denoise current image at time t
         with torch.no_grad():
@@ -210,11 +229,13 @@ class NoDiffusionEnv(gym.Env):
                 else:
                     start_t = 10 * (1+action) - 1 # Discrete action space
                
-                t = torch.tensor(int(max(0, min(start_t, 999))))
+                # t = torch.tensor(int(max(0, min(start_t, 999))))
+                t = int(max(0, min(start_t, 999)))
+                
                 # print('t:', t)
                 # self.old_interval = initial_t // (self.target_steps - 1)
                 self.interval = int(t / (self.target_steps - 1)) 
-                self.x = self.DM.get_noisy_x(t, self.x0_t, initial=True)
+                # self.x = self.DM.get_noisy_x(t, self.x0_t, initial=True)
                 # self.pivot_x = self.DM.get_noisy_x(initial_t, self.x0_t, initial=True)
                 
             else: # Second subtask
@@ -222,19 +243,28 @@ class NoDiffusionEnv(gym.Env):
                 # t = initial_t - self.uniform_interval * action
                 t = initial_t - self.interval * action
                 thres = 999 if self.current_step_num == 0 else self.time_step_sequence[-1]
-                t = torch.tensor(int(max(0, min(t, thres))))
+                # t = torch.tensor(int(max(0, min(t, thres))))
+                t = int(max(0, min(t, thres)))
                 self.interval = int(t / (self.target_steps - self.current_step_num - 1)) if (self.target_steps - self.current_step_num - 1) != 0 else self.interval
-                self.x = self.DM.get_noisy_x(t, self.x0_t, self.et) if self.current_step_num != 0 else self.DM.get_noisy_x(t, self.x0_t, initial=True)
+                # self.x = self.DM.get_noisy_x(t, self.x0_t, self.et) if self.current_step_num != 0 else self.DM.get_noisy_x(t, self.x0_t, initial=True)
             
-            self.action_sequence.append(action.item())
-            self.previous_t = t
-            self.x0_t, _,  self.et = self.DM.single_step_ddnm(self.x, self.y, t, self.classes)
+            # self.action_sequence.append(action.item())
+            # self.previous_t = t
+            # self.x0_t, _,  self.et = self.DM.single_step_ddnm(self.x, self.y, t, self.classes)
             # self.pivot_x0_t, _,  self.pivot_et = self.DM.single_step_ddnm(self.pivot_x, self.y, initial_t, self.classes)
-            self.time_step_sequence.append(t.item())
+            # self.time_step_sequence.append(t.item())
 
             # Run the remaining steps with uniform sampling to get x_0|t for reward calculation
-            self.uniform_x0_t = self.x0_t.clone()
-            self.uniform_et = self.et.clone()
+            # self.uniform_x0_t = self.x0_t.clone()
+            # self.uniform_et = self.et.clone()
+
+            # push the current t to the queue
+            self.action_sequence.append(action.item())
+            self.previous_t = t
+            
+            self.time_step_sequence.append(t)
+
+            self.t_queue.put(t.item())
 
 
             isFromDegraded = True
