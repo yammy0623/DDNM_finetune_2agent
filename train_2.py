@@ -272,7 +272,43 @@ def eval(env, model, eval_episode_num, num_steps):
     print("============ eval DONE ===============")
     return avg_reward, avg_ssim, avg_psnr, pivot_ssim, pivot_psnr, ddim_ssim, ddim_psnr, ddnm_ssim, ddnm_psnr, info['time_step_sequence'], info['action_sequence'], info['threshold'], avg_reward_t, avg_t
 
-def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_steps=5):
+# done_val, env_eval_config, args, my_config
+def train(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my_config, second_stage=False):
+    num_steps = args.target_steps
+    num_train_envs = my_config['num_train_envs']
+    ### First stage training
+    if args.finetune:
+        epoch_num = epoch_num * args.finetune_ratio
+        print("finetune: training with epoch_num = ", epoch_num)
+    else:
+        epoch_num = my_config['epoch_num'] if args.baseline else my_config["first_stage_epoch_num"]
+        print("training with epoch_num = ", epoch_num)
+
+    if not args.second_stage:
+        ### First stage finetuning stage (need to load agent 2)
+        if args.finetune:
+            agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best_2")
+            env_config['agent2'] = agent2
+            # train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
+            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
+        else:
+            env_config['agent2'] = None
+            # train_env = DummyVecEnv([make_env(config, seed) for seed in range(num_train_envs)])
+            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
+        
+
+        model = my_config["algorithm"](
+                my_config["policy_network"], 
+                train_env,
+                n_steps=my_config["n_steps"],
+                n_epochs=my_config["n_epochs"],
+                verbose=2,
+                tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
+                learning_rate=my_config["learning_rate"],
+                policy_kwargs=my_config["policy_kwargs"],
+            )
+    eval_env = gym.make('final-baseline', **env_eval_config) if args.baseline else gym.make('final-ours', **env_eval_config)
+        
     """Train agent using SB3 algorithm and my_config"""
     current_best_psnr = 0
     current_best_ssim = 0
@@ -292,7 +328,7 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
     for epoch in range(int(epoch_num)):
 
         model.learn(
-            total_timesteps=config["timesteps_per_epoch"],
+            total_timesteps=my_config["timesteps_per_epoch"],
             reset_num_timesteps=False,
             callback=callback_list,
             progress_bar=True,
@@ -300,7 +336,7 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
 
         th.cuda.empty_cache()  # Clear GPU cache
         ### Evaluation
-        print(config["run_id"])
+        print(my_config["run_id"])
         print("Epoch: ", epoch)
         avg_reward, avg_ssim, avg_psnr, pivot_ssim, pivot_psnr, ddim_ssim, ddim_psnr, ddnm_ssim, ddnm_psnr, time_step_sequence, action_sequence, threshold, avg_reward_t, avg_t = eval(eval_env, model, config["eval_episode_num"], num_steps)
 
@@ -312,7 +348,7 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
             print("Saving Model !!!")
             current_best_psnr = avg_psnr
             current_best_ssim = avg_ssim
-            save_path = config["save_path"]
+            save_path = my_config["save_path"]
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             if second_stage:
@@ -337,7 +373,7 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
         print("DDNM_psnr:   ", ddnm_psnr)
         print("Time_step_sequence:", time_step_sequence)
         print("Action_sequence:", action_sequence)
-        print("training reward", [] if not reward_callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1])
+        print("training reward", [] if not reward_callback.all_epoch_averages[-1] else reward_callback.all_epoch_averages[-1])
         print()
         gpu_index=0
         total = th.cuda.get_device_properties(gpu_index).total_memory
@@ -359,7 +395,7 @@ def train(done_val, eval_env, model, config, epoch_num, second_stage=False, num_
                 # "ddnm_psnr": ddnm_psnr,
 
                 "start_t": avg_t[0],
-                "train_reward": [] if not reward_callback.all_epoch_averages[-1] else callback.all_epoch_averages[-1],
+                "train_reward": [] if not reward_callback.all_epoch_averages[-1] else reward_callback.all_epoch_averages[-1],
                 "gpu_process_memory_MB": used_MB,
                 "gpu_process_memory_percent": percent,
             }
@@ -543,7 +579,7 @@ def main():
     manager = mp.Manager()
     t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
     x0_t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
-    done_val = mp.Value('b', False)
+    done_val = manager.Value('b', False)
     print("t_queues: ", t_queues)
     print("x0_t_queues: ", x0_t_queues)
     # print("t_queues: ", t_queues)
@@ -560,80 +596,47 @@ def main():
 
     
     
-    ### First stage training
-    
-    if args.finetune:
-        epoch_num = epoch_num * args.finetune_ratio
-        print("finetune: training with epoch_num = ", epoch_num)
-    else:
-        epoch_num = my_config['epoch_num'] if args.baseline else my_config["first_stage_epoch_num"]
-        print("training with epoch_num = ", epoch_num)
-
-    if not args.second_stage:
-        ### First stage finetuning stage (need to load agent 2)
-        if args.finetune:
-            agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best_2")
-            env_config['agent2'] = agent2
-            # train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
-            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
-        else:
-            env_config['agent2'] = None
-            # train_env = DummyVecEnv([make_env(config, seed) for seed in range(num_train_envs)])
-            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
+    env_config["agent2"] = None
+    env_eval_config = {
+        "env_id": 0,
+        "t_queue": t_queues[0],
+        "x0_t_queue": x0_t_queues[0],
+        "target_steps": my_config["target_steps"],
+        "max_steps": my_config["diffusion_max_steps"],
+        "threshold": my_config["threshold"],
+        "seed": my_config["seed"],
+        "agent1": env_config["agent1"],
+        "agent2": env_config["agent2"],
         
+    }
 
-        model = my_config["algorithm"](
-                my_config["policy_network"], 
-                train_env,
-                n_steps=my_config["n_steps"],
-                n_epochs=my_config["n_epochs"],
-                verbose=2,
-                tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
-                learning_rate=my_config["learning_rate"],
-                policy_kwargs=my_config["policy_kwargs"],
-            )
-        # del config["model_mode"], config["agent2"]
-        env_eval_config = {
-            "env_id": 0,
-            "t_queue": t_queues[0],
-            "x0_t_queue": x0_t_queues[0],
-            "target_steps": my_config["target_steps"],
-            "max_steps": my_config["diffusion_max_steps"],
-            "threshold": my_config["threshold"],
-            "seed": my_config["seed"],
-            "agent1": env_config["agent1"],
-            "agent2": env_config["agent2"],
-            
-        }
-        eval_env = gym.make('final-baseline', **env_eval_config) if args.baseline else gym.make('final-ours', **env_eval_config)
+    p_rl = mp.Process(target=train, args=(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my_config))
+    p_rl.start()
+    processes.append(p_rl)
+
+    # else:
+    #     ### Second stage training
+    #     epoch_num = my_config['epoch_num']
+    #     print("Loaded model from: ", f"{my_config['save_path']}/best")
+    #     agent1 = my_config["algorithm"].load(f"{my_config['save_path']}/best")
+    #     config['agent1'] = agent1
+    #     config['agent2'] = None
+    #     config["model_mode"] = my_config["model_mode"]
+
+    #     train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
+    #     del config["model_mode"], config['agent2']
         
-        p_rl = mp.Process(target=train, args=(done_val, eval_env, model, my_config, epoch_num, args.target_steps))
-        p_rl.start()
-        processes.append(p_rl)
-
-    else:
-        ### Second stage training
-        epoch_num = my_config['epoch_num']
-        print("Loaded model from: ", f"{my_config['save_path']}/best")
-        agent1 = my_config["algorithm"].load(f"{my_config['save_path']}/best")
-        config['agent1'] = agent1
-        config['agent2'] = None
-        config["model_mode"] = my_config["model_mode"]
-
-        train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
-        del config["model_mode"], config['agent2']
-        
-        eval_env = gym.make('final-ours', **config)
-        model2 = my_config["algorithm"](
-            my_config["policy_network"], 
-            train_env, 
-            verbose=2,
-            n_steps=my_config["n_steps"],
-            tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
-            learning_rate=my_config["learning_rate"],
-            policy_kwargs=my_config["policy_kwargs"],
-        )
-        train(eval_env, model2, my_config, epoch_num = epoch_num, second_stage=True, num_steps = args.target_steps, callback=reward_accumulator)
+    #     eval_env = gym.make('final-ours', **config)
+    #     model2 = my_config["algorithm"](
+    #         my_config["policy_network"], 
+    #         train_env, 
+    #         verbose=2,
+    #         n_steps=my_config["n_steps"],
+    #         tensorboard_log=os.path.join("tensorboard_log", my_config["run_id"]),
+    #         learning_rate=my_config["learning_rate"],
+    #         policy_kwargs=my_config["policy_kwargs"],
+    #     )
+    #     train(eval_env, model2, my_config, epoch_num = epoch_num, second_stage=True, num_steps = args.target_steps, callback=reward_accumulator)
 
 if __name__ == '__main__':
     print("Before setting:", th.cuda.memory_reserved())

@@ -68,7 +68,7 @@ class NoDiffusionEnv(gym.Env):
         # Initialize the random seed
         self.data_idx = 0
         self.seed(seed)
-        self.reset()
+        # self.reset()
         # print("Training data size:", len(self.DM.dataset))
         
     def seed(self, seed=None):
