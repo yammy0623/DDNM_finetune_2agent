@@ -64,7 +64,7 @@ class RewardAccumulatorCallback(BaseCallback):
             # Reset for the next epoch
             self.episode_rewards = []
 
-def make_env(my_config, env_id, t_queue, x0_t_queue, seed=None):
+def make_env(my_config, env_id, t_queue, x0_t_queue, x_orig_queue, metrices_queue, dm_config, seed=None):
     # seed = my_config["seed"]
     print("Seed: ", seed)
     
@@ -78,8 +78,12 @@ def make_env(my_config, env_id, t_queue, x0_t_queue, seed=None):
                 "seed": seed,
                 "t_queue": t_queue,
                 "x0_t_queue": x0_t_queue,
+                "x_orig_queue": x_orig_queue,
+                "metrices_queue":  metrices_queue,
+
                 "agent1": my_config["agent1"],
                 "agent2": None if my_config["agent2"] is not None else my_config["agent2"],
+                "config": dm_config,
             }
             
             if my_config["model_mode"] == "baseline":
@@ -274,7 +278,7 @@ def eval(env, model, eval_episode_num, num_steps):
     return avg_reward, avg_ssim, avg_psnr, pivot_ssim, pivot_psnr, ddim_ssim, ddim_psnr, ddnm_ssim, ddnm_psnr, info['time_step_sequence'], info['action_sequence'], info['threshold'], avg_reward_t, avg_t
 
 # done_val, env_eval_config, args, my_config
-def train(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my_config, second_stage=False):
+def train(done_val, t_queues, x0_t_queues, x_orig_queues, metrices_queue, env_config, env_eval_config, args, my_config, config, second_stage=False):
     num_steps = args.target_steps
     num_train_envs = my_config['num_train_envs']
     ### First stage training
@@ -291,11 +295,11 @@ def train(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my
             agent2 = my_config["algorithm"].load(f"{my_config['save_path']}/best_2")
             env_config['agent2'] = agent2
             # train_env = DummyVecEnv([make_env(config) for _ in range(num_train_envs)])
-            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
+            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], x_orig_queues[i], metrices_queue[i], config, env_config["seed"]+i) for i in range(num_train_envs)])
         else:
             env_config['agent2'] = None
             # train_env = DummyVecEnv([make_env(config, seed) for seed in range(num_train_envs)])
-            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], env_config["seed"]+i) for i in range(num_train_envs)])
+            train_env = SubprocVecEnv([make_env(env_config, i, t_queues[i], x0_t_queues[i], x_orig_queues[i],  metrices_queue[i], config, env_config["seed"]+i) for i in range(num_train_envs)])
         
 
         model = my_config["algorithm"](
@@ -426,13 +430,19 @@ def log_gpu_memory(step=None, gpu_index=0):
     #     "system/gpu_process_memory_percent": percent,
     # })
 
-    
 
+from skimage.metrics import structural_similarity
+def get_ssim_psnr(x, orig):
+    mse = torch.mean((x - orig) ** 2)
+    psnr = 10 * torch.log10(1 / mse).item()
+    ssim = structural_similarity(x.cpu().numpy(), orig.cpu().numpy(), win_size=21, channel_axis=0, data_range=1.0)
+    return ssim, psnr
 
-    
+from datasets import get_dataset, data_transform, inverse_data_transform
+
 
 import torch
-def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args, config):
+def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, x_orig_queue, metrices_queue, isValid, num_env, args, config):
     device = (
         torch.device("cuda")
         if torch.cuda.is_available()
@@ -470,6 +480,8 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args
     print("get data_loader")
         
     for x_orig, classes in data_loader:
+       
+
         # print("x_orig", x_orig)
         # print("classes", classes)
         print("load data")
@@ -480,63 +492,92 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, isValid, num_env, args
             print("done_val.value = True")
             break
 
+        for env_id in range(num_env):
+            x_orig_queue[env_id].put((x_orig[env_id].cpu(), None))
+        
         x, y, Apy, x_orig, A_inv_y = diffusion_model.preprocess(x_orig, None)
         x0_t = A_inv_y.clone()
         print("x0_t shape", x0_t.shape)
+        print("x_orig shape", x_orig.shape)
+
+
+        
+        # while not rl_done_val.value:
+        t_all = []
+        et_all = []
 
         # initialize the queue
         for env_id in range(num_env):
             x0_t_queue[env_id].put((x0_t[env_id].cpu(), None))
         
-
-        
-        # while not rl_done_val.value:
-        x0_t_all = []
-        t_all = []
-        et_all = []
-
         if not t_queue[0].empty():
             print("t_queue not empty")
     
         for env_id in range(num_env):
             t = t_queue[env_id].get()
             t_all.append(torch.tensor(t).to(device))
+        t_all = torch.tensor(t_all).to(device)
 
-        if INIT:
-            print("first step")
-            for env_id in range(num_env):
-                x0_t, _ = x0_t_queue[env_id].get()
-                x0_t_all.append(x0_t)
-            x = diffusion_model.get_noisy_x(t_all, x0_t_all, initial=True)
-            et_all = [None] * num_env  # no et for the first step
-        else:
-            for env_id in range(num_env):
-                x0_t, et = x0_t_queue[env_id].get()
-                x0_t_all.append(x0_t)
-                et_all.append(et)
-            x = diffusion_model.get_noisy_x(t_all, x0_t_all, et_all)
+        x = diffusion_model.get_noisy_x(t_all, x0_t, initial=True)
+        et_all = [None] * num_env  # no et for the first step
+        # else:
+        #     for env_id in range(num_env):
+        #         x0_t, et = x0_t_queue[env_id].get()
+        #         x0_t_all.append(x0_t)
+        #         et_all.append(et)
+        #     x = diffusion_model.get_noisy_x(t_all, x0_t_all, et_all)
 
         x0_t_all, _, et_all = diffusion_model.single_step_ddnm(x, y, t_all, classes)
-        print("diffusion step done")
+        print("diffusion first step done")
 
+        
+
+
+        # do the rest part in uniform
+        B = t_all.shape[0]
+        # 針對每張圖，從 t_all[i] 均勻走 num_steps 步到 0
+        uniform_t_all = torch.stack([
+            torch.round(torch.linspace(start_t.item(), 0, steps=args.target_steps + 1)[1:])  # 去掉第一個起點
+            for start_t in t_all
+        ], dim=1).long().to(device)
+        
+        print("get uniform_t_all", uniform_t_all.shape)
+        uniform_x0_t = x0_t_all.clone()
+        uniform_et = et_all.clone()
+
+        with torch.no_grad():
+            for i in range(uniform_t_all.shape[0]):
+                print("uniform_t_all i", i)
+                uniform_t = uniform_t_all[i]
+                uniform_x = diffusion_model.get_noisy_x(uniform_t, uniform_x0_t, uniform_et)
+                uniform_x0_t, _,  uniform_et = diffusion_model.single_step_ddnm(uniform_x, y, uniform_t, classes)
+        
+                torch.cuda.empty_cache()
+        x = inverse_data_transform(diffusion_model.config, uniform_x0_t).to(device)
+        
         for env_id in range(num_env):
-            x0_t_queue[env_id].put((x0_t_all[env_id], et_all[env_id]))
-        print("put x0_t to queue")
+            ssim, psnr = get_ssim_psnr(x[env_id].squeeze(0), x_orig[env_id].squeeze(0))
+            x0_t_queue[env_id].put((x0_t_all[env_id].detach().cpu(), et_all[env_id].detach().cpu()))
+            metrices_queue[env_id].put((ssim, psnr))
 
-            
+        print("put x0_t to queue")
+        del x0_t_all, et_all, x
+
 
 
 manager = None
 t_queues = None
 x0_t_queues = None
+x_orig_queues = None
 done_val = None
 
 def main():
-    global manager, t_queues, x0_t_queues, done_val
+    global manager, t_queues, x0_t_queues, done_val, x_orig_queues
     
     manager = mp.Manager()
     # Initialze DDNM
     args, config = parse_args_and_config()
+    print("config", config)
     # training_data = 256
     # runner = my_diffusion(args, config)
 
@@ -618,13 +659,14 @@ def main():
     
     t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
     x0_t_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
+    x_orig_queues = {env_id: manager.Queue() for env_id in range(num_train_envs)}
+    metrices_queue = {env_id: manager.Queue() for env_id in range(num_train_envs)}
     done_val = manager.Value('b', False)
     print("t_queues created")
     print("x0_t_queues created")
     
     # Multiple Process
-    processes = []
-    p_diffusion = mp.Process(target=diffusion_worker, args=(True, done_val, t_queues, x0_t_queues, False, num_train_envs, args, config))
+    p_diffusion = mp.Process(target=diffusion_worker, args=(True, done_val, t_queues, x0_t_queues, x_orig_queues, metrices_queue, False, num_train_envs, args, config))
     
     
     env_config["agent2"] = None
@@ -640,7 +682,7 @@ def main():
         "agent2": env_config["agent2"],
         
     }
-    p_rl = mp.Process(target=train, args=(done_val, t_queues, x0_t_queues, env_config, env_eval_config, args, my_config))
+    p_rl = mp.Process(target=train, args=(done_val, t_queues, x0_t_queues, x_orig_queues, metrices_queue, env_config, env_eval_config, args, my_config, config))
     p_diffusion.start()
     # processes.append(p_diffusion)
     p_rl.start()

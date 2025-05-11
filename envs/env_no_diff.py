@@ -18,12 +18,20 @@ S1_CONTI=True
 
 
 class NoDiffusionEnv(gym.Env):
-    def __init__(self, env_id, target_steps=10, max_steps=100, threshold=0.8, t_queue=None, x0_t_queue=None, agent1=None, agent2=None, seed=232):
+    def __init__(self, env_id, target_steps=10, max_steps=100, threshold=0.8, t_queue=None, x0_t_queue=None, x_orig_queue=None, metrices_queue=None, agent1=None, agent2=None, seed=232, config=None):
         super(NoDiffusionEnv, self).__init__()
+        self.device = (
+            torch.device("cuda")
+            if torch.cuda.is_available()
+            else torch.device("cpu")
+        )
         self.env_id = env_id
         # queue for diffusion image
         self.x0_t_queue = x0_t_queue
+        self.x_orig_queue = x_orig_queue
         self.t_queue = t_queue
+        self.DM_config = config
+        self.metrics_queue = metrices_queue
 
 
         self.agent1 = agent1
@@ -107,9 +115,11 @@ class NoDiffusionEnv(gym.Env):
 
         # ================= DDNM ================= 
         print("waiting for x0_t from queue")
-        self.x0_t = self.x0_t_queue.get()
+        self.x0_t, self.et = self.x0_t_queue.get()
+        self.x_orig = self.x_orig_queue.get()
         print("get x0_t from queue")
-        print("x0_t shape:", self.x0_t[0].shape)
+        print("x0_t shape:", self.x0_t.shape)
+        print("x_orig shape:", self.x_orig[0].shape)
 
         
         # Save DDIM performance
@@ -147,7 +157,7 @@ class NoDiffusionEnv(gym.Env):
 
         
         observation = {
-            "image": self.x0_t[0],  
+            "image": self.x0_t,  
             # "value": np.array([999]),
         }
         
@@ -367,14 +377,15 @@ class NoDiffusionEnv(gym.Env):
                 self.time_step_sequence = self.time_step_sequence2
                     
             else:
-                # print("uniform sampling")
+            #     # print("uniform sampling")
                 for i in range(self.target_steps - self.current_step_num - 1):
                     uniform_t = torch.tensor(int(t - self.interval - self.interval * i))
                     uniform_t = torch.tensor(max(0, min(uniform_t, 999)))
-                    self.uniform_x = self.DM.get_noisy_x(uniform_t, self.uniform_x0_t, self.uniform_et)
-                    self.uniform_x0_t, _,  self.uniform_et = self.DM.single_step_ddnm(self.uniform_x, self.y, uniform_t, self.classes)
+            #         self.uniform_x = self.DM.get_noisy_x(uniform_t, self.uniform_x0_t, self.uniform_et)
+            #         self.uniform_x0_t, _,  self.uniform_et = self.DM.single_step_ddnm(self.uniform_x, self.y, uniform_t, self.classes)
                     if self.adjust == False: # First subtask
                         self.time_step_sequence.append(uniform_t.item())
+                        
 
             
             
@@ -420,8 +431,9 @@ class NoDiffusionEnv(gym.Env):
                 "remain": np.array([self.target_steps - self.current_step_num - 1])
             }
         else:
+            self.x0_t, self.et = self.x0_t_queue.get()
             observation = {
-                "image":  self.x0_t[0].cpu(),  
+                "image":  self.x0_t,  
                 # "value": np.array([t])
             }
         self.current_step_num += 1
@@ -436,21 +448,18 @@ class NoDiffusionEnv(gym.Env):
 
     def calculate_reward(self, done):
         reward = 0
-        orig = inverse_data_transform(self.DM.config, self.x_orig[0]).to(self.DM.device)
-        if done and self.adjust: # Second subtask done
-            x = inverse_data_transform(self.DM.config, self.x0_t[0]).to(self.DM.device)
-        elif self.agent2:
-            x = inverse_data_transform(self.DM.config, self.agent2_x0_t[0]).to(self.DM.device)
-        else: # First subtask or Second subtask not done
-            x = inverse_data_transform(self.DM.config, self.uniform_x0_t[0]).to(self.DM.device)
-        # pivot_x = inverse_data_transform(self.DM.config, self.pivot_x0_t[0]).to(self.DM.device)
+        # orig = inverse_data_transform(self.DM_config, self.x_orig[0]).to(self.device)
+        # if done and self.adjust: # Second subtask done
+        #     x = inverse_data_transform(self.DM_config, self.x0_t[0]).to(self.device)
+        # elif self.agent2:
+        #     x = inverse_data_transform(self.DM_config, self.agent2_x0_t[0]).to(self.device)
+        # else: # First subtask or Second subtask not done
+        #     x = inverse_data_transform(self.DM_config, self.uniform_x0_t[0]).to(self.device)
+        # # pivot_x = inverse_data_transform(self.DM.config, self.pivot_x0_t[0]).to(self.DM.device)
 
-        ssim, psnr = self.get_ssim_psnr(x, orig)
-        # pivot_ssim, pivot_psnr = self.get_ssim_psnr(pivot_x, orig)
-
-
-        # reward += 0.5 * (psnr - pivot_psnr) / (27.46 - 26.82)
-        # reward += 0.5 * (ssim - pivot_ssim) / (0.01)
+        # ssim, psnr = self.get_ssim_psnr(x, orig)
+        
+        ssim, psnr = self.metrics_queue.get()
 
         self.ddim_ssim = 0
         self.ddim_psnr = 0

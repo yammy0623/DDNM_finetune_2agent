@@ -393,9 +393,9 @@ class Diffusion(object):
         #     per_ssim = ssim(np.transpose(x[0][j].cpu().numpy(), (1,2,0)), np.transpose(orig.cpu().numpy(), (1,2,0)), win_size=21, multichannel=True, data_range=1.0)
         # return psnr, per_ssim
     
-    def single_step_ddnm(self, x, y, i, classes):
+    def single_step_ddnm(self, x, y, t, classes):
         xt = x.to('cuda')
-        t = torch.tensor([i]).to(xt.device)
+        # t = torch.tensor([i]).to(xt.device)
         at = compute_alpha(self.betas, t.long())
         if self.cls_fn == None:
             et = self.model(xt, t)
