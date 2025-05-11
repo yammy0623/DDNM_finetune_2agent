@@ -460,6 +460,7 @@ class NoDiffusionEnv(gym.Env):
         # ssim, psnr = self.get_ssim_psnr(x, orig)
         
         ssim, psnr = self.metrics_queue.get()
+        print("ssim:", ssim, "psnr:", psnr)
 
         self.ddim_ssim = 0
         self.ddim_psnr = 0

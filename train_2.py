@@ -534,7 +534,6 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, x_orig_queue, metrices
 
 
         # do the rest part in uniform
-        B = t_all.shape[0]
         # 針對每張圖，從 t_all[i] 均勻走 num_steps 步到 0
         uniform_t_all = torch.stack([
             torch.round(torch.linspace(start_t.item(), 0, steps=args.target_steps + 1)[1:])  # 去掉第一個起點
@@ -550,19 +549,21 @@ def diffusion_worker(INIT, done_val, t_queue, x0_t_queue, x_orig_queue, metrices
                 print("uniform_t_all i", i)
                 uniform_t = uniform_t_all[i]
                 uniform_x = diffusion_model.get_noisy_x(uniform_t, uniform_x0_t, uniform_et)
-                uniform_x0_t, _,  uniform_et = diffusion_model.single_step_ddnm(uniform_x, y, uniform_t, classes)
-        
+                uniform_x0_t, _,  uniform_et = diffusion_model.single_step_ddnm(uniform_x, y, uniform_t, classes)        
                 torch.cuda.empty_cache()
+
+
         x = inverse_data_transform(diffusion_model.config, uniform_x0_t).to(device)
         
         for env_id in range(num_env):
             ssim, psnr = get_ssim_psnr(x[env_id].squeeze(0), x_orig[env_id].squeeze(0))
             x0_t_queue[env_id].put((x0_t_all[env_id].detach().cpu(), et_all[env_id].detach().cpu()))
             metrices_queue[env_id].put((ssim, psnr))
+            
 
         print("put x0_t to queue")
-        del x0_t_all, et_all, x
-
+        del x0_t_all, et_all, x, uniform_x0_t
+        print("Current Memory:", th.cuda.memory_reserved())
 
 
 manager = None
@@ -591,7 +592,7 @@ def main():
         "alg": "PPO",
         "target_steps": args.target_steps,
         "threshold": 0.9,
-        "num_train_envs": 2,
+        "num_train_envs": 3,
         "n_steps": 5120,
         "n_epochs": 1,
         "policy_network": "MultiInputPolicy",
